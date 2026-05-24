@@ -1,0 +1,2529 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#C8102E">
+<title>DGM Sampling Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* =====================================================
+   CSS VARIABLES & RESET
+===================================================== */
+:root {
+  --red:      #C8102E;
+  --red-dark: #9e0c24;
+  --red-light:#fdeaed;
+  --yellow:   #FFE140;
+  --yellow2:  #FFBC18;
+  --navy:     #1B3A57;
+  --navy2:    #152d43;
+  --teal:     #2F7898;
+  --green:    #0E7544;
+  --cream:    #F8F6F0;
+  --gray:     #3E4A59;
+  --gray2:    #6b7a8d;
+  --gray3:    #e8eaed;
+  --gray4:    #f4f5f7;
+  --white:    #ffffff;
+  --shadow:   0 2px 12px rgba(0,0,0,0.10);
+  --shadow-lg:0 8px 32px rgba(0,0,0,0.14);
+  --radius:   14px;
+  --radius-sm:8px;
+  --font:     'Be Vietnam Pro', sans-serif;
+  --nav-h:    60px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font);
+  background: var(--gray4);
+  color: var(--navy);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* =====================================================
+   LAYOUT SHELL
+===================================================== */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--white);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Desktop: show as centered card */
+@media (min-width: 520px) {
+  body { background: var(--navy); display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  #app { height: 100vh; box-shadow: var(--shadow-lg); border-radius: 0; }
+}
+
+/* =====================================================
+   HEADER
+===================================================== */
+.header {
+  background: var(--red);
+  color: #fff;
+  padding: 0 16px;
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 100;
+}
+.header-back {
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.18);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.header-back:active { background: rgba(255,255,255,0.3); }
+.header-title { font-size: 17px; font-weight: 700; flex: 1; }
+.header-subtitle { font-size: 12px; opacity: 0.8; font-weight: 400; }
+.header-action {
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border: none; background: transparent; color: #fff; font-size: 20px;
+}
+.header-logo { height: 32px; width: auto; }
+
+/* =====================================================
+   SCROLLABLE CONTENT
+===================================================== */
+.screen-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px);
+}
+.screen-content.no-bottom-nav { padding-bottom: 16px; }
+
+/* =====================================================
+   BOTTOM NAV
+===================================================== */
+.bottom-nav {
+  height: calc(var(--nav-h) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: var(--white);
+  border-top: 1px solid var(--gray3);
+  display: flex;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 100;
+}
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--gray2);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 6px 4px;
+  transition: color 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-nav-item .nav-icon { font-size: 22px; line-height: 1; }
+.bottom-nav-item.active { color: var(--red); }
+.bottom-nav-item.active .nav-icon { transform: scale(1.1); }
+
+/* =====================================================
+   SCREEN MANAGEMENT
+===================================================== */
+.screen { display: none; flex-direction: column; height: 100%; }
+.screen.active { display: flex; }
+
+/* =====================================================
+   LOGIN SCREEN
+===================================================== */
+#screen-login {
+  background: linear-gradient(160deg, var(--red) 0%, var(--red-dark) 45%, var(--navy) 100%);
+  justify-content: center;
+  align-items: center;
+  padding: 32px 28px;
+  gap: 0;
+}
+.login-logo-wrap {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  margin-bottom: 36px;
+  animation: fadeDown 0.6s ease;
+}
+.login-logo-circle {
+  width: 90px; height: 90px;
+  background: var(--white);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  font-size: 42px;
+}
+.login-brand { color: var(--yellow); font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
+.login-sub { color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 400; }
+
+.login-card {
+  background: var(--white);
+  border-radius: 20px;
+  padding: 28px 24px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  animation: fadeUp 0.5s ease 0.1s both;
+}
+.login-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 6px; color: var(--navy); }
+.login-card p  { font-size: 13px; color: var(--gray2); margin-bottom: 24px; }
+
+.form-group { margin-bottom: 16px; }
+.form-label { font-size: 13px; font-weight: 600; color: var(--gray); margin-bottom: 6px; display: block; }
+.form-input {
+  width: 100%;
+  padding: 13px 16px;
+  border: 1.5px solid var(--gray3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 15px;
+  color: var(--navy);
+  background: var(--cream);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  -webkit-appearance: none;
+}
+.form-input:focus {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(200,16,46,0.12);
+  background: var(--white);
+}
+.form-input::placeholder { color: var(--gray2); }
+.form-input-wrap { position: relative; }
+.input-eye {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  cursor: pointer; font-size: 18px; color: var(--gray2); user-select: none;
+}
+
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 14px 20px;
+  border: none; border-radius: var(--radius-sm);
+  font-family: var(--font); font-size: 16px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-primary { background: var(--red); color: var(--white); }
+.btn-primary:active { background: var(--red-dark); transform: scale(0.98); }
+.btn-secondary { background: var(--gray4); color: var(--navy); }
+.btn-yellow  { background: var(--yellow); color: var(--navy); }
+.btn-outline  { background: transparent; border: 1.5px solid var(--red); color: var(--red); }
+.btn-sm { padding: 9px 16px; font-size: 13px; border-radius: var(--radius-sm); width: auto; }
+.btn-green  { background: var(--green); color: #fff; }
+.btn-danger { background: #dc3545; color: #fff; }
+.btn:disabled { opacity: 0.5; pointer-events: none; }
+
+.login-error {
+  background: var(--red-light);
+  color: var(--red);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 12px;
+  display: none;
+}
+
+/* =====================================================
+   HOME SCREEN
+===================================================== */
+.home-hero {
+  background: linear-gradient(135deg, var(--red) 0%, var(--red-dark) 100%);
+  padding: 20px 20px 28px;
+  color: #fff;
+}
+.home-greeting { font-size: 13px; opacity: 0.85; font-weight: 400; }
+.home-name     { font-size: 22px; font-weight: 800; margin-top: 2px; }
+.home-role     {
+  display: inline-block; margin-top: 8px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 20px; padding: 3px 12px;
+  font-size: 12px; font-weight: 600;
+}
+.home-stats-row {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  padding: 0 16px;
+  margin-top: -18px;
+}
+.stat-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.stat-num { font-size: 24px; font-weight: 800; color: var(--red); line-height: 1; }
+.stat-label { font-size: 10px; color: var(--gray2); font-weight: 500; margin-top: 3px; }
+
+.section-title {
+  font-size: 13px; font-weight: 700; color: var(--gray2);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 20px 16px 10px;
+}
+.menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px; }
+.menu-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 20px 16px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  border: 1.5px solid transparent;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.menu-card:active { transform: scale(0.97); border-color: var(--red); }
+.menu-icon { font-size: 30px; }
+.menu-card-title { font-size: 14px; font-weight: 700; color: var(--navy); line-height: 1.3; }
+.menu-card-sub   { font-size: 11px; color: var(--gray2); }
+.menu-card.highlight { background: var(--red); }
+.menu-card.highlight .menu-card-title { color: var(--white); }
+.menu-card.highlight .menu-card-sub   { color: rgba(255,255,255,0.75); }
+
+/* Badge */
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  background: var(--yellow); color: var(--navy);
+  border-radius: 10px; font-size: 11px; font-weight: 700;
+}
+.badge.red { background: var(--red); color: var(--white); }
+
+/* =====================================================
+   CARDS & LISTS
+===================================================== */
+.card {
+  background: var(--white);
+  border-radius: var(--radius);
+  margin: 0 16px 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--gray3);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-body   { padding: 14px 16px; }
+.card-title  { font-size: 15px; font-weight: 700; }
+.card-sub    { font-size: 12px; color: var(--gray2); margin-top: 2px; }
+
+.plan-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  margin: 0 16px 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s;
+}
+.plan-card:active { transform: scale(0.98); }
+.plan-card-top {
+  padding: 14px 16px 10px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+}
+.plan-card-name { font-size: 15px; font-weight: 700; flex: 1; }
+.plan-card-meta {
+  padding: 0 16px 14px;
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.meta-chip {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--gray4);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--gray);
+  font-weight: 500;
+}
+
+/* Status chips */
+.status-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.status-cho_duyet       { background: #fff3cd; color: #856404; }
+.status-da_duyet        { background: #d1f2eb; color: #0e7544; }
+.status-yeu_cau_chinh_sua { background: #fff0e6; color: #c96a00; }
+.status-tu_choi         { background: #fdeaed; color: var(--red); }
+.status-hoan_thanh      { background: #e8f4fd; color: var(--teal); }
+
+/* =====================================================
+   FORM STYLES
+===================================================== */
+.form-section {
+  background: var(--white);
+  border-radius: var(--radius);
+  margin: 0 16px 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.form-section-header {
+  padding: 12px 16px;
+  background: var(--navy);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.form-section-header.yellow { background: var(--yellow); color: var(--navy); }
+.form-section-header.green  { background: var(--green);  color: var(--white); }
+.form-section-header.teal   { background: var(--teal);   color: var(--white); }
+.form-section-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row.triple { grid-template-columns: 1fr 1fr 1fr; }
+
+.form-field { display: flex; flex-direction: column; gap: 5px; }
+.form-field label { font-size: 12px; font-weight: 600; color: var(--gray); }
+.form-field .required::after { content: ' *'; color: var(--red); }
+
+select.form-input { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7a8d' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; appearance: none; }
+
+textarea.form-input { resize: none; min-height: 80px; }
+
+/* Toggle switch */
+.toggle-wrap { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
+.toggle-label { font-size: 14px; font-weight: 500; color: var(--navy); }
+.toggle {
+  position: relative; width: 48px; height: 28px;
+  background: var(--gray3); border-radius: 14px;
+  cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+}
+.toggle.on { background: var(--green); }
+.toggle::after {
+  content: ''; position: absolute;
+  width: 22px; height: 22px;
+  background: #fff; border-radius: 50%;
+  top: 3px; left: 3px;
+  transition: transform 0.2s; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+.toggle.on::after { transform: translateX(20px); }
+
+/* Multi-select chips */
+.chip-select { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-option {
+  padding: 7px 14px;
+  border: 1.5px solid var(--gray3);
+  border-radius: 20px;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.chip-option.selected {
+  background: var(--red); border-color: var(--red); color: var(--white);
+}
+
+/* Product selector */
+.product-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gray3);
+}
+.product-item:last-child { border-bottom: none; }
+.product-check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--gray3); flex-shrink: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
+.product-check.checked { background: var(--red); border-color: var(--red); }
+.product-check.checked::after { content: '✓'; color: #fff; font-size: 13px; font-weight: 700; }
+.product-info { flex: 1; }
+.product-name { font-size: 13px; font-weight: 600; }
+.product-price{ font-size: 11px; color: var(--gray2); }
+.product-qty  { width: 64px; }
+.product-qty .form-input { text-align: center; padding: 8px 6px; font-size: 14px; }
+
+/* =====================================================
+   IMAGE UPLOAD
+===================================================== */
+.img-upload-section { margin-bottom: 20px; }
+.img-upload-title {
+  font-size: 13px; font-weight: 700; color: var(--navy);
+  margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.img-upload-title .required-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+.img-upload-area {
+  border: 2px dashed var(--gray3);
+  border-radius: var(--radius);
+  padding: 16px;
+  text-align: center;
+  background: var(--gray4);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.img-upload-area:active { border-color: var(--red); background: var(--red-light); }
+.img-upload-area input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.img-upload-icon { font-size: 28px; margin-bottom: 6px; }
+.img-upload-text { font-size: 13px; color: var(--gray2); }
+.img-count { font-size: 11px; color: var(--teal); font-weight: 600; margin-top: 4px; }
+.img-preview-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+  margin-top: 10px;
+}
+.img-preview-item {
+  aspect-ratio: 1; border-radius: 8px; overflow: hidden; position: relative;
+  background: var(--gray3);
+}
+.img-preview-item img { width: 100%; height: 100%; object-fit: cover; }
+.img-remove {
+  position: absolute; top: 3px; right: 3px;
+  width: 20px; height: 20px;
+  background: rgba(0,0,0,0.6); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; cursor: pointer;
+}
+.timemark-notice {
+  background: var(--yellow);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--navy);
+  display: flex; gap: 8px; align-items: flex-start;
+  margin-bottom: 14px;
+}
+.timemark-notice::before { content: '⚠️'; flex-shrink: 0; font-size: 14px; }
+
+/* =====================================================
+   DASHBOARD — MANAGER
+===================================================== */
+.dash-tabs {
+  display: flex;
+  background: var(--gray4);
+  border-bottom: 1px solid var(--gray3);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.dash-tabs::-webkit-scrollbar { display: none; }
+.dash-tab {
+  flex-shrink: 0;
+  padding: 12px 18px;
+  font-size: 13px; font-weight: 600;
+  color: var(--gray2);
+  cursor: pointer; border: none; background: transparent;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s; white-space: nowrap;
+  font-family: var(--font);
+}
+.dash-tab.active { color: var(--red); border-bottom-color: var(--red); }
+
+.lang-toggle {
+  padding: 0 16px 0 0;
+  display: flex; align-items: center;
+  flex-shrink: 0;
+}
+.lang-btn {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px; font-weight: 700;
+  cursor: pointer; border: 1.5px solid var(--gray3);
+  background: var(--white); color: var(--gray2);
+  font-family: var(--font);
+  transition: all 0.2s;
+}
+.lang-btn.active { background: var(--navy); color: var(--white); border-color: var(--navy); }
+
+/* KPI cards */
+.kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 16px 0; }
+.kpi-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+.kpi-label { font-size: 11px; font-weight: 600; color: var(--gray2); text-transform: uppercase; letter-spacing: 0.3px; }
+.kpi-value { font-size: 24px; font-weight: 800; color: var(--navy); line-height: 1.1; margin-top: 4px; }
+.kpi-value.red    { color: var(--red); }
+.kpi-value.green  { color: var(--green); }
+.kpi-value.teal   { color: var(--teal); }
+.kpi-value.yellow { color: #a07800; }
+.kpi-sub  { font-size: 11px; color: var(--gray2); margin-top: 2px; }
+
+/* Chart bars */
+.bar-chart { padding: 4px 0; }
+.bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.bar-label { font-size: 12px; color: var(--gray); width: 100px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { flex: 1; background: var(--gray3); border-radius: 4px; height: 8px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 4px; background: var(--red); transition: width 0.6s ease; }
+.bar-value { font-size: 11px; font-weight: 600; color: var(--gray); width: 50px; text-align: right; flex-shrink: 0; }
+
+/* Status pipeline */
+.pipeline { display: flex; gap: 6px; flex-wrap: wrap; padding: 12px 16px; }
+.pipeline-item {
+  flex: 1; min-width: 80px;
+  background: var(--white);
+  border-radius: var(--radius-sm);
+  padding: 10px 10px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.pipeline-num  { font-size: 22px; font-weight: 800; }
+.pipeline-label{ font-size: 10px; color: var(--gray2); font-weight: 500; margin-top: 2px; }
+
+/* Approval card */
+.approval-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  margin: 0 16px 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.approval-card-top { padding: 14px 16px 10px; }
+.approval-card-name { font-size: 15px; font-weight: 700; }
+.approval-card-meta { font-size: 12px; color: var(--gray2); margin-top: 4px; }
+.approval-actions {
+  display: flex; gap: 8px; padding: 10px 16px 14px;
+  border-top: 1px solid var(--gray3);
+}
+.approval-actions .btn { flex: 1; padding: 10px 8px; font-size: 13px; }
+
+/* AI Analysis */
+.ai-option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 16px 0; }
+.ai-option {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.ai-option.selected { border-color: var(--red); background: var(--red-light); }
+.ai-option-icon { font-size: 24px; margin-bottom: 6px; }
+.ai-option-title { font-size: 13px; font-weight: 700; color: var(--navy); }
+.ai-option-desc  { font-size: 11px; color: var(--gray2); margin-top: 3px; }
+
+.ai-result-box {
+  background: var(--white);
+  border-radius: var(--radius);
+  margin: 14px 16px 0;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  font-size: 14px; line-height: 1.7;
+  color: var(--navy);
+  min-height: 120px;
+  white-space: pre-wrap;
+}
+.ai-result-box .ai-loading { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 0; color: var(--gray2); font-size: 13px; }
+.ai-loader { width: 32px; height: 32px; border: 3px solid var(--gray3); border-top-color: var(--red); border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+.filter-row { display: flex; gap: 8px; padding: 12px 16px 0; }
+.filter-row select { flex: 1; }
+
+/* Calendar */
+.cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 3px; padding: 12px 16px;
+}
+.cal-day-label { text-align: center; font-size: 10px; font-weight: 700; color: var(--gray2); padding: 4px 0; }
+.cal-day {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  background: var(--gray4);
+  transition: all 0.15s;
+}
+.cal-day.today  { background: var(--navy); color: #fff; font-weight: 700; }
+.cal-day.has-plan { background: var(--red-light); color: var(--red); font-weight: 700; }
+.cal-day.has-plan.done { background: #d1f2eb; color: var(--green); }
+.cal-day.empty { background: transparent; }
+.cal-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; margin-top: 2px; }
+
+/* =====================================================
+   DETAIL VIEW
+===================================================== */
+.detail-section { margin: 0 16px 12px; }
+.detail-section-title {
+  font-size: 12px; font-weight: 700; color: var(--gray2);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.detail-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--gray3);
+  gap: 12px;
+}
+.detail-row:last-child { border-bottom: none; }
+.detail-key   { font-size: 13px; color: var(--gray2); flex-shrink: 0; }
+.detail-value { font-size: 13px; font-weight: 600; text-align: right; word-break: break-word; }
+
+.diff-highlight { background: var(--yellow); border-radius: 4px; padding: 1px 6px; font-size: 12px; font-weight: 700; }
+
+/* =====================================================
+   TOAST & MODAL
+===================================================== */
+.toast {
+  position: fixed; bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px);
+  left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--navy);
+  color: #fff; border-radius: 24px;
+  padding: 10px 20px;
+  font-size: 13px; font-weight: 600;
+  opacity: 0; transition: all 0.3s; pointer-events: none;
+  z-index: 999; white-space: nowrap; max-width: 90vw;
+  text-align: center;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.error { background: var(--red); }
+.toast.success { background: var(--green); }
+
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 500; display: flex; align-items: flex-end;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.overlay.show { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--white);
+  border-radius: 20px 20px 0 0;
+  width: 100%; max-height: 80vh;
+  overflow-y: auto;
+  padding: 20px;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+}
+.overlay.show .modal { transform: translateY(0); }
+.modal-handle { width: 36px; height: 4px; background: var(--gray3); border-radius: 2px; margin: 0 auto 16px; }
+.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+.modal-footer { display: flex; gap: 10px; margin-top: 20px; }
+.modal-footer .btn { flex: 1; }
+
+/* Loading overlay */
+#loading-overlay {
+  position: fixed; inset: 0; background: rgba(255,255,255,0.85);
+  z-index: 999; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+  display: none;
+}
+.loading-spinner {
+  width: 44px; height: 44px;
+  border: 4px solid var(--gray3);
+  border-top-color: var(--red);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.loading-text { font-size: 14px; color: var(--gray2); font-weight: 500; }
+
+/* =====================================================
+   ANIMATIONS
+===================================================== */
+@keyframes fadeDown { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeUp   { from { opacity: 0; transform: translateY(16px);  } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin     { to { transform: rotate(360deg); } }
+@keyframes pulse    { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+.fade-in { animation: fadeUp 0.35s ease both; }
+
+/* =====================================================
+   MISC UTILITY
+===================================================== */
+.divider { height: 1px; background: var(--gray3); margin: 8px 0; }
+.spacer  { height: 16px; }
+.text-center { text-align: center; }
+.text-red    { color: var(--red); }
+.text-green  { color: var(--green); }
+.text-gray   { color: var(--gray2); }
+.font-bold   { font-weight: 700; }
+.small       { font-size: 12px; }
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 48px 24px; gap: 10px;
+  color: var(--gray2); text-align: center;
+}
+.empty-icon { font-size: 48px; }
+.empty-text { font-size: 14px; font-weight: 500; }
+.empty-sub  { font-size: 12px; }
+
+input[type=number] { -moz-appearance: textfield; }
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+.pt-12 { padding-top: 12px; }
+.pb-0  { padding-bottom: 0; }
+
+/* Info banner */
+.info-banner {
+  background: var(--cream);
+  border-left: 3px solid var(--teal);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--gray);
+  margin: 0 16px 12px;
+}
+
+/* Sticky submit button */
+.sticky-submit {
+  position: sticky; bottom: 0;
+  background: var(--white);
+  padding: 12px 16px calc(12px + var(--safe-bottom));
+  border-top: 1px solid var(--gray3);
+  flex-shrink: 0;
+}
+
+/* Cost summary */
+.cost-summary {
+  background: var(--navy);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 0 16px 12px;
+  color: #fff;
+}
+.cost-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+.cost-row.total { font-size: 15px; font-weight: 700; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loading-text">Đang xử lý...</div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- MODAL OVERLAY -->
+<div class="overlay" id="modal-overlay">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app">
+
+  <!-- ===== SCREEN: LOGIN ===== -->
+  <div class="screen active" id="screen-login" style="overflow-y:auto;">
+    <div class="login-logo-wrap">
+      <div class="login-logo-circle">🐔</div>
+      <div class="login-brand">AYAM BRAND</div>
+      <div class="login-sub">DGM Sampling Manager</div>
+    </div>
+    <div class="login-card">
+      <h2>Đăng nhập</h2>
+      <p>Nhập thông tin tài khoản của bạn</p>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" id="login-email" placeholder="email@denis.com" autocomplete="email" inputmode="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mật khẩu</label>
+        <div class="form-input-wrap">
+          <input class="form-input" type="password" id="login-password" placeholder="Nhập mật khẩu" autocomplete="current-password">
+          <span class="input-eye" id="toggle-pw">👁</span>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-login">Đăng nhập</button>
+      <div class="login-error" id="login-error"></div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN: HOME ===== -->
+  <div class="screen" id="screen-home">
+    <div class="header">
+      <div class="login-logo-circle" style="width:32px;height:32px;font-size:18px;">🐔</div>
+      <div style="flex:1;">
+        <div class="header-title">DGM Sampling</div>
+      </div>
+      <button class="header-action" id="btn-logout" title="Đăng xuất">⏻</button>
+    </div>
+    <div class="screen-content">
+      <div class="home-hero">
+        <div class="home-greeting" id="home-greeting">Xin chào,</div>
+        <div class="home-name" id="home-name">—</div>
+        <div class="home-role" id="home-role">—</div>
+      </div>
+      <div class="home-stats-row" id="home-stats"></div>
+      <div class="section-title">Chức năng</div>
+      <div class="menu-grid" id="home-menu"></div>
+      <div class="spacer"></div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN: MY PLANS ===== -->
+  <div class="screen" id="screen-plans">
+    <div class="header">
+      <button class="header-back" onclick="showScreen('home')">←</button>
+      <div>
+        <div class="header-title">Kế hoạch của tôi</div>
+      </div>
+      <button class="header-action" onclick="showScreen('create-plan')">＋</button>
+    </div>
+    <div class="screen-content no-bottom-nav">
+      <div class="filter-row" style="padding-top:14px;">
+        <select class="form-input" id="plan-filter-month" onchange="loadMyPlans()">
+          <option value="">Tất cả tháng</option>
+        </select>
+        <select class="form-input" id="plan-filter-status" onchange="loadMyPlans()">
+          <option value="">Tất cả trạng thái</option>
+          <option value="cho_duyet">Chờ duyệt</option>
+          <option value="da_duyet">Đã duyệt</option>
+          <option value="yeu_cau_chinh_sua">Cần chỉnh sửa</option>
+          <option value="hoan_thanh">Hoàn thành</option>
+        </select>
+      </div>
+      <div class="spacer" style="height:8px;"></div>
+      <div id="plans-list"></div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN: CREATE PLAN ===== -->
+  <div class="screen" id="screen-create-plan">
+    <div class="header">
+      <button class="header-back" onclick="showScreen('plans')">←</button>
+      <div>
+        <div class="header-title">Lên kế hoạch sampling</div>
+        <div class="header-subtitle" id="create-plan-subtitle"></div>
+      </div>
+    </div>
+    <div class="screen-content no-bottom-nav" style="padding-bottom:90px;" id="create-plan-content">
+      <!-- Dynamically rendered -->
+    </div>
+    <div class="sticky-submit">
+      <button class="btn btn-primary" id="btn-submit-plan" onclick="submitPlan()">
+        📤 Gửi kế hoạch để duyệt
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN: PLAN DETAIL ===== -->
+  <div class="screen" id="screen-plan-detail">
+    <div class="header">
+      <button class="header-back" id="plan-detail-back">←</button>
+      <div style="flex:1;">
+        <div class="header-title" id="plan-detail-title">Chi tiết kế hoạch</div>
+        <div class="header-subtitle" id="plan-detail-id"></div>
+      </div>
+    </div>
+    <div class="screen-content no-bottom-nav" id="plan-detail-content"></div>
+  </div>
+
+  <!-- ===== SCREEN: REPORT ===== -->
+  <div class="screen" id="screen-report">
+    <div class="header">
+      <button class="header-back" onclick="showScreen('plans')">←</button>
+      <div>
+        <div class="header-title">Báo cáo hoạt động</div>
+        <div class="header-subtitle" id="report-plan-id"></div>
+      </div>
+    </div>
+    <div class="screen-content no-bottom-nav" style="padding-bottom:90px;" id="report-content">
+      <!-- Dynamically rendered -->
+    </div>
+    <div class="sticky-submit">
+      <button class="btn btn-primary" id="btn-submit-report" onclick="submitReport()">
+        📊 Gửi báo cáo
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN: CALENDAR (Salesman) ===== -->
+  <div class="screen" id="screen-calendar">
+    <div class="header">
+      <button class="header-back" onclick="showScreen('home')">←</button>
+      <div style="flex:1;">
+        <div class="header-title">Lịch sampling</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="header-action" onclick="prevMonth()">‹</button>
+        <span id="cal-month-label" style="font-size:13px;font-weight:700;color:#fff;min-width:70px;text-align:center;"></span>
+        <button class="header-action" onclick="nextMonth()">›</button>
+      </div>
+    </div>
+    <div class="screen-content no-bottom-nav" id="calendar-content"></div>
+  </div>
+
+  <!-- ===== SCREEN: DASHBOARD (Manager/Marketing) ===== -->
+  <div class="screen" id="screen-dashboard">
+    <div class="header" style="padding-right:8px;">
+      <button class="header-back" onclick="showScreen('home')">←</button>
+      <div style="flex:1;">
+        <div class="header-title" id="dash-header-title">Dashboard</div>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button class="lang-btn active" id="lang-vi" onclick="setLang('vi')">VI</button>
+        <button class="lang-btn" id="lang-en" onclick="setLang('en')">EN</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;background:var(--gray4);border-bottom:1px solid var(--gray3);gap:0;">
+      <div class="dash-tabs" style="flex:1;" id="dash-tabs">
+        <button class="dash-tab active" onclick="showDashTab('overview')">📊 Tổng quan</button>
+        <button class="dash-tab" onclick="showDashTab('approval')">✅ Duyệt</button>
+        <button class="dash-tab" onclick="showDashTab('performance')">📈 Hiệu quả</button>
+        <button class="dash-tab" onclick="showDashTab('ai')">🤖 AI Analysis</button>
+      </div>
+    </div>
+    <!-- Filter row -->
+    <div class="filter-row" style="flex-shrink:0;">
+      <select class="form-input" id="dash-filter-month" onchange="loadDashboard()">
+        <option value="">Tất cả tháng</option>
+      </select>
+      <select class="form-input" id="dash-filter-channel" onchange="loadDashboard()">
+        <option value="">Tất cả kênh</option>
+        <option value="MT">MT</option>
+        <option value="GT South">GT South</option>
+        <option value="GT Central">GT Central</option>
+        <option value="GT North">GT North</option>
+      </select>
+    </div>
+    <div class="screen-content no-bottom-nav" id="dash-content"></div>
+  </div>
+
+</div><!-- end #app -->
+
+<script>
+// =====================================================
+// CONSTANTS & STATE
+// =====================================================
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxYlCAAZ70Ipw0B2hCBmut_MfwRRV1KPtfTLpI2J1P6fVePUVfq7mqSuSVXjLxQO5kDKQ/exec';
+const MAX_IMAGES = 40;
+const TARGET_IMG_KB = 400; // compress to ~400KB each
+
+let currentUser = null;
+let currentLang = 'vi';
+let calMonth = new Date();
+let calendarData = {};
+let masterData = { products: [], locations: [], pgPricing: [] };
+let planFormData = {};
+let reportFormData = { imgLocation:[], imgFood:[], imgOverview:[], imgOther:[] };
+let currentPlanId = null;
+let currentDashTab = 'overview';
+
+// =====================================================
+// TRANSLATIONS (VI / EN)
+// =====================================================
+const T = {
+  vi: {
+    dashTitle: 'Quản lý Sampling',
+    tabOverview: '📊 Tổng quan', tabApproval: '✅ Duyệt', tabPerf: '📈 Hiệu quả', tabAi: '🤖 AI Analysis',
+    totalEvents: 'Tổng buổi sampling', pending: 'Chờ duyệt', approved: 'Đã duyệt', completed: 'Hoàn thành',
+    totalTasters: 'Tổng người thử', avgPerEvent: 'TB người thử/buổi',
+    totalSales: 'Doanh số ghi nhận', totalCost: 'Tổng chi phí',
+    costPerContact: 'Chi phí/người thử', topSkus: 'SKU sampling nhiều nhất',
+    channelBreakdown: 'Theo kênh', byMonth: 'Xu hướng theo tháng',
+    noData: 'Chưa có dữ liệu',
+  },
+  en: {
+    dashTitle: 'Sampling Manager',
+    tabOverview: '📊 Overview', tabApproval: '✅ Approval', tabPerf: '📈 Performance', tabAi: '🤖 AI Analysis',
+    totalEvents: 'Total events', pending: 'Pending', approved: 'Approved', completed: 'Completed',
+    totalTasters: 'Total tasters', avgPerEvent: 'Avg tasters/event',
+    totalSales: 'Recorded sales', totalCost: 'Total cost',
+    costPerContact: 'Cost per taster', topSkus: 'Top sampled SKUs',
+    channelBreakdown: 'By channel', byMonth: 'Monthly trend',
+    noData: 'No data yet',
+  }
+};
+function t(key) { return (T[currentLang] || T.vi)[key] || key; }
+function setLang(l) {
+  currentLang = l;
+  document.getElementById('lang-vi').classList.toggle('active', l === 'vi');
+  document.getElementById('lang-en').classList.toggle('active', l === 'en');
+  loadDashboard();
+}
+
+// =====================================================
+// UTILITIES
+// =====================================================
+function fmtNum(n) {
+  if (!n && n !== 0) return '—';
+  return Number(n).toLocaleString('vi-VN');
+}
+function fmtCurrency(n) {
+  if (!n && n !== 0) return '—';
+  return Number(n).toLocaleString('vi-VN') + ' đ';
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  const dd = new Date(d);
+  if (isNaN(dd)) return d;
+  return dd.toLocaleDateString('vi-VN');
+}
+function fmtPercent(num, den) {
+  if (!den || den === 0) return '—';
+  return Math.round((num / den) * 100) + '%';
+}
+function statusLabel(s) {
+  const map = { cho_duyet:'Chờ duyệt', da_duyet:'Đã duyệt', yeu_cau_chinh_sua:'Cần chỉnh sửa', tu_choi:'Từ chối', hoan_thanh:'Hoàn thành' };
+  return map[s] || s;
+}
+function statusChip(s) {
+  return `<span class="status-chip status-${s}">${statusLabel(s)}</span>`;
+}
+function loading(show, msg) {
+  const el = document.getElementById('loading-overlay');
+  el.style.display = show ? 'flex' : 'none';
+  if (msg) document.getElementById('loading-text').textContent = msg;
+}
+function showToast(msg, type='', duration=3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (type ? ' ' + type : '');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// Month options for filters
+function populateMonthFilters() {
+  const now = new Date();
+  let html = '';
+  for (let i = 0; i <= 5; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = d.toISOString().substring(0,7);
+    const label = d.toLocaleDateString('vi-VN', {month:'long', year:'numeric'});
+    html += `<option value="${val}">${label}</option>`;
+  }
+  document.querySelectorAll('#plan-filter-month, #dash-filter-month').forEach(el => {
+    const cur = el.value;
+    el.innerHTML = `<option value="">Tất cả tháng</option>` + html;
+    el.value = cur;
+  });
+  // Default current month for dash
+  document.getElementById('dash-filter-month').value = now.toISOString().substring(0,7);
+}
+
+// API call helper
+async function api(method, params) {
+  if (method === 'GET') {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${SCRIPT_URL}?${qs}`);
+    return res.json();
+  } else {
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+    return res.json();
+  }
+}
+
+// =====================================================
+// SCREEN ROUTING
+// =====================================================
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById('screen-' + name);
+  if (el) el.classList.add('active');
+}
+
+// =====================================================
+// LOGIN
+// =====================================================
+document.getElementById('toggle-pw').addEventListener('click', () => {
+  const pw = document.getElementById('login-password');
+  pw.type = pw.type === 'password' ? 'text' : 'password';
+});
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+document.getElementById('btn-login').addEventListener('click', doLogin);
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+
+  if (!email || !password) {
+    errEl.textContent = 'Vui lòng nhập đầy đủ thông tin.';
+    errEl.style.display = 'block'; return;
+  }
+  loading(true, 'Đang đăng nhập...');
+  try {
+    const res = await api('POST', { action:'login', email, password });
+    if (res.success) {
+      currentUser = res.user;
+      sessionStorage.setItem('dgm_user', JSON.stringify(currentUser));
+      await loadMasterData();
+      setupHome();
+      showScreen('home');
+    } else {
+      errEl.textContent = res.error || 'Đăng nhập thất bại.';
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    errEl.textContent = 'Lỗi kết nối. Kiểm tra internet và thử lại.';
+    errEl.style.display = 'block';
+  } finally { loading(false); }
+}
+
+document.getElementById('btn-logout').addEventListener('click', () => {
+  if (confirm('Bạn có muốn đăng xuất?')) {
+    currentUser = null;
+    sessionStorage.removeItem('dgm_user');
+    showScreen('login');
+  }
+});
+
+// =====================================================
+// MASTER DATA
+// =====================================================
+async function loadMasterData() {
+  const [p, l, pg] = await Promise.all([
+    api('GET', {action:'getProducts'}),
+    api('GET', {action:'getLocations'}),
+    api('GET', {action:'getPgPricing'}),
+  ]);
+  if (p.success) masterData.products = p.data;
+  if (l.success) masterData.locations = l.data;
+  if (pg.success) masterData.pgPricing = pg.data;
+}
+
+// =====================================================
+// HOME SCREEN
+// =====================================================
+function setupHome() {
+  const u = currentUser;
+  document.getElementById('home-greeting').textContent = getGreeting();
+  document.getElementById('home-name').textContent = u.name;
+  document.getElementById('home-role').textContent = u.role + (u.region !== 'Nationwide' ? ' · ' + u.region : '');
+  populateMonthFilters();
+  renderHomeMenu();
+  loadHomeStats();
+}
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Chào buổi sáng,';
+  if (h < 18) return 'Chào buổi chiều,';
+  return 'Chào buổi tối,';
+}
+
+function renderHomeMenu() {
+  const u = currentUser;
+  const isManager = u.role === 'Sales Manager' || u.role === 'Marketing';
+  const isRep = u.role === 'Sales Representative';
+  const isSalesman = u.role === 'Salesman';
+  let html = '';
+
+  if (isRep || isManager) {
+    html += menuCard('📋', 'Lên kế hoạch', 'Tạo plan sampling mới', () => initCreatePlan(), true);
+  }
+  html += menuCard('📁', 'Kế hoạch của tôi', 'Xem & theo dõi', () => { showScreen('plans'); loadMyPlans(); });
+  if (isSalesman || isRep) {
+    html += menuCard('📅', 'Lịch sampling', 'Xem lịch theo tháng', () => { showScreen('calendar'); renderCalendar(); });
+  }
+  if (isManager) {
+    html += menuCard('📊', 'Dashboard', 'Tổng hợp & phân tích', () => { showScreen('dashboard'); loadDashboard(); }, false, 'highlight');
+    html += menuCard('✅', 'Phê duyệt', 'Kế hoạch chờ duyệt', () => { showScreen('dashboard'); showDashTab('approval'); loadDashboard(); });
+  }
+
+  document.getElementById('home-menu').innerHTML = html;
+}
+function menuCard(icon, title, sub, action, isPrimary=false, cls='') {
+  const id = 'mc-' + Math.random().toString(36).substr(2,5);
+  setTimeout(() => {
+    const el = document.getElementById(id);
+    if (el) el.onclick = action;
+  }, 50);
+  return `<div class="menu-card ${cls}" id="${id}">
+    <div class="menu-icon">${icon}</div>
+    <div class="menu-card-title">${title}</div>
+    <div class="menu-card-sub">${sub}</div>
+  </div>`;
+}
+
+async function loadHomeStats() {
+  const month = new Date().toISOString().substring(0,7);
+  try {
+    const res = await api('GET', { action:'getMyPlans', userCode:currentUser.code, month });
+    if (!res.success) return;
+    const plans = res.data;
+    const pending = plans.filter(p => p.status === 'cho_duyet').length;
+    const approved = plans.filter(p => p.status === 'da_duyet').length;
+    const done = plans.filter(p => p.status === 'hoan_thanh').length;
+    document.getElementById('home-stats').innerHTML = `
+      <div class="stat-card"><div class="stat-num">${plans.length}</div><div class="stat-label">Tháng này</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:var(--yellow2);">${pending}</div><div class="stat-label">Chờ duyệt</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:var(--green);">${done}</div><div class="stat-label">Hoàn thành</div></div>
+    `;
+  } catch(e) {}
+}
+
+// =====================================================
+// MY PLANS
+// =====================================================
+async function loadMyPlans() {
+  const month = document.getElementById('plan-filter-month').value;
+  const statusFilter = document.getElementById('plan-filter-status').value;
+  const listEl = document.getElementById('plans-list');
+  listEl.innerHTML = '<div class="empty-state"><div class="ai-loader"></div></div>';
+  try {
+    const res = await api('GET', { action:'getMyPlans', userCode:currentUser.code, month });
+    if (!res.success) { listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">${res.error}</div></div>`; return; }
+    let plans = res.data;
+    if (statusFilter) plans = plans.filter(p => p.status === statusFilter);
+    if (plans.length === 0) {
+      listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có kế hoạch nào</div><div class="empty-sub">Nhấn + để tạo mới</div></div>';
+      return;
+    }
+    plans.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+    listEl.innerHTML = plans.map(p => planCard(p)).join('');
+  } catch(e) {
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối</div></div>';
+  }
+}
+
+function planCard(p) {
+  const canReport = (p.status === 'da_duyet') &&
+    (currentUser.role !== 'Sales Manager' || p.executors.includes(currentUser.code) || currentUser.role === 'Sales Manager');
+  return `<div class="plan-card" onclick="viewPlanDetail('${p.id}')">
+    <div class="plan-card-top">
+      <div>
+        <div class="plan-card-name">${p.locationName}</div>
+        <div style="font-size:12px;color:var(--gray2);margin-top:2px;">${p.id} · ${fmtDate(p.date)}</div>
+      </div>
+      ${statusChip(p.status)}
+    </div>
+    <div class="plan-card-meta">
+      <div class="meta-chip">📍 ${p.region}</div>
+      <div class="meta-chip">⏰ ${p.timeStart}–${p.timeEnd}</div>
+      ${p.hiresPg ? `<div class="meta-chip">👥 ${p.pgCount} PG · ${p.pgHours}h</div>` : ''}
+      ${p.totalEstCost ? `<div class="meta-chip">💰 ${fmtCurrency(p.totalEstCost)}</div>` : ''}
+      ${canReport ? `<div class="meta-chip" style="background:var(--red-light);color:var(--red);" onclick="event.stopPropagation();initReport('${p.id}')">📊 Báo cáo</div>` : ''}
+    </div>
+  </div>`;
+}
+
+// =====================================================
+// PLAN DETAIL
+// =====================================================
+async function viewPlanDetail(planId) {
+  loading(true, 'Đang tải...');
+  try {
+    const res = await api('GET', { action:'getPlanDetail', planId });
+    if (!res.success) { showToast(res.error, 'error'); return; }
+    const p = res.data;
+    renderPlanDetail(p);
+    showScreen('plan-detail');
+  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+  finally { loading(false); }
+}
+
+function renderPlanDetail(p) {
+  document.getElementById('plan-detail-title').textContent = p.locationName;
+  document.getElementById('plan-detail-id').textContent = p.id + ' · ' + fmtDate(p.date);
+
+  const back = document.getElementById('plan-detail-back');
+  back.onclick = () => showScreen('plans');
+
+  const isManager = currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing';
+  const canEdit = (p.creator === currentUser.code || isManager) &&
+    (p.status === 'cho_duyet' || p.status === 'yeu_cau_chinh_sua');
+  const canReport = p.status === 'da_duyet';
+
+  // Check if there are differences between plan and approval
+  let approvalDiff = '';
+  if (p.approval && p.approval.result === 'da_duyet') {
+    const origPg = p.pgCount, appPg = p.approval.pgCount;
+    if (String(origPg) !== String(appPg)) {
+      approvalDiff += `<div class="info-banner" style="margin-top:0;margin-bottom:8px;">⚠️ Số PG được duyệt thay đổi: <b>${origPg} → ${appPg}</b></div>`;
+    }
+  }
+
+  const sampleNames = (p.samples || []).map(s => {
+    const prod = masterData.products.find(pr => pr.ma === s.ma);
+    return `${prod ? prod.ten : s.ma} × ${s.so_luong}`;
+  }).join(', ');
+
+  let html = `<div class="spacer" style="height:8px;"></div>
+  <div class="detail-section">
+    ${approvalDiff}
+    ${statusChip(p.status)}
+    <div class="spacer" style="height:10px;"></div>`;
+
+  // If needs edit — show reason
+  if (p.approval && p.approval.result === 'yeu_cau_chinh_sua') {
+    html += `<div class="info-banner" style="background:var(--red-light);border-color:var(--red);">
+      ✏️ Yêu cầu chỉnh sửa: <b>${p.approval.notes || '—'}</b>
+    </div>`;
+  }
+  if (p.approval && p.approval.result === 'tu_choi') {
+    html += `<div class="info-banner" style="background:var(--red-light);border-color:var(--red);">
+      ❌ Lý do từ chối: <b>${p.approval.notes || '—'}</b>
+    </div>`;
+  }
+
+  html += `
+    <div class="detail-section-title">Thông tin chung</div>
+    <div class="card"><div class="card-body">
+      ${dr('Khu vực / Kênh', p.region)}
+      ${dr('Điểm sampling', p.locationName)}
+      ${dr('Ngày thực hiện', fmtDate(p.date))}
+      ${dr('Thời gian', `${p.timeStart} – ${p.timeEnd}`)}
+      ${dr('Người giám sát', p.supervisor || '—')}
+    </div></div>
+
+    <div class="detail-section-title">Sản phẩm & Hoạt động</div>
+    <div class="card"><div class="card-body">
+      ${dr('Sản phẩm sampling', sampleNames || '—')}
+      ${dr('Có chương trình KM', p.hasPromo ? '✅ Có' : 'Không')}
+      ${dr('On/Off post', p.postType || '—')}
+      ${dr('Ra ụ', p.hasKiosk ? '✅ Có' : 'Không')}
+      ${dr('Loại booth', p.boothType || '—')}
+    </div></div>
+
+    <div class="detail-section-title">Nhân sự & Chi phí</div>
+    <div class="card"><div class="card-body">
+      ${dr('Thuê PG', p.hiresPg ? `✅ ${p.pgCount} PG · ${p.pgHours} giờ` : 'Không')}
+      ${p.hiresPg ? dr('Ghi chú PG', p.pgNote || '—') : ''}
+      ${dr('Chi phí địa điểm', p.locationCost ? fmtCurrency(p.locationCost) : 'Không')}
+      ${p.locationCost ? dr('Loại chi phí', p.costType || '—') : ''}
+      ${p.locationCost ? dr('Có hóa đơn', p.hasInvoice ? '✅ Có' : 'Không') : ''}
+      ${dr('Tổng chi phí ước tính', `<b>${fmtCurrency(p.totalEstCost)}</b>`)}
+    </div></div>
+
+    <div class="detail-section-title">Mục tiêu</div>
+    <div class="card"><div class="card-body">
+      ${dr('Mục đích', p.purpose || '—')}
+      ${dr('Dự kiến người thử', fmtNum(p.estTasters))}
+      ${dr('Dự kiến doanh số', fmtCurrency(p.estSales))}
+      ${dr('Ghi chú', p.notes || '—')}
+    </div></div>
+  `;
+
+  // Reports section
+  if (p.reports && p.reports.length > 0) {
+    html += `<div class="detail-section-title">Báo cáo (${p.reports.length})</div>`;
+    p.reports.forEach(r => {
+      html += `<div class="card"><div class="card-body">
+        ${dr('Người BC', r.reporter)} ${dr('Thời gian', fmtDate(r.reportedAt))}
+        ${dr('Số người thử', fmtNum(r.actualTasters))}
+        ${dr('Doanh số thực tế', fmtCurrency(r.actualSales))}
+        ${dr('Phản hồi KH', r.feedback || '—')}
+        ${r.imgFolderUrl ? `<a href="${r.imgFolderUrl}" target="_blank" style="color:var(--teal);font-size:13px;">📁 Xem thư mục ảnh</a>` : ''}
+      </div></div>`;
+    });
+  }
+
+  // Actions
+  if (canEdit || canReport) {
+    html += `<div style="display:flex;gap:10px;padding:0 16px;">`;
+    if (canEdit) html += `<button class="btn btn-outline" style="flex:1;" onclick="initCreatePlan('${p.id}')">✏️ Chỉnh sửa</button>`;
+    if (canReport) html += `<button class="btn btn-primary" style="flex:1;" onclick="initReport('${p.id}')">📊 Báo cáo</button>`;
+    html += `</div>`;
+  }
+  html += `<div class="spacer"></div>`;
+  document.getElementById('plan-detail-content').innerHTML = html;
+}
+function dr(key, val) {
+  return `<div class="detail-row"><span class="detail-key">${key}</span><span class="detail-value">${val}</span></div>`;
+}
+
+// =====================================================
+// CREATE PLAN FORM
+// =====================================================
+function initCreatePlan(editPlanId = null) {
+  currentPlanId = editPlanId;
+  planFormData = { samples: [], dishes: [], gifts: [], executors: [], hiresPg: false, hasPromo: false, hasKiosk: false, hasInvoice: false };
+  document.getElementById('create-plan-subtitle').textContent = editPlanId ? 'Chỉnh sửa: ' + editPlanId : 'Kế hoạch mới';
+  renderCreatePlanForm();
+  showScreen('create-plan');
+}
+
+function renderCreatePlanForm() {
+  const isMT = currentUser.channel === 'MT' || currentUser.channel === 'Manager';
+  const locationOptions = masterData.locations
+    .filter(l => currentUser.channel === 'Manager' || l.channel === currentUser.channel || l.channel.includes(currentUser.region))
+    .map(l => `<option value="${l.name}">${l.name}</option>`).join('');
+
+  const pgOptions = masterData.pgPricing.map(pg =>
+    `<option value="${pg.hours}">${pg.hours} giờ – ${fmtCurrency(pg.ratePerPg)}/PG</option>`
+  ).join('');
+
+  const productList = masterData.products.map(p => `
+    <div class="product-item" id="prod-${p.ma}">
+      <div class="product-check" onclick="toggleProduct('${p.ma}')"></div>
+      <div class="product-info">
+        <div class="product-name">${p.ten}</div>
+        <div class="product-price">MT: ${fmtCurrency(p.giaMT)} | GT: ${fmtCurrency(p.giaGT)}</div>
+      </div>
+      <div class="product-qty" style="display:none;" id="qty-wrap-${p.ma}">
+        <input class="form-input product-qty" type="number" min="1" max="999" placeholder="SL"
+          id="qty-${p.ma}" oninput="updateSample('${p.ma}')">
+      </div>
+    </div>`).join('');
+
+  // Get users for executor selection
+  const userOptions = getUserOptions();
+
+  document.getElementById('create-plan-content').innerHTML = `
+    <div class="spacer" style="height:8px;"></div>
+
+    <!-- LOCATION -->
+    <div class="form-section">
+      <div class="form-section-header">📍 Địa điểm & Thời gian</div>
+      <div class="form-section-body">
+        ${currentUser.channel !== 'Manager' ? `
+        <div class="form-field">
+          <label class="required">Điểm sampling</label>
+          <select class="form-input" id="f-location" onchange="updateLocationName(this.value)">
+            <option value="">-- Chọn điểm --</option>
+            ${locationOptions}
+          </select>
+        </div>` : ''}
+        <div class="form-field">
+          <label class="${currentUser.channel !== 'Manager' ? '' : 'required'}">Tên điểm sampling (hiển thị)</label>
+          <input class="form-input" type="text" id="f-location-name" placeholder="Ví dụ: Lotte Mart Gò Vấp – T2">
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label class="required">Ngày thực hiện</label>
+            <input class="form-input" type="date" id="f-date" min="${new Date().toISOString().split('T')[0]}">
+          </div>
+          <div class="form-field">
+            <label class="required">Khu vực / Kênh</label>
+            <input class="form-input" type="text" id="f-region" value="${currentUser.channel || ''}" placeholder="MT / GT South...">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label class="required">Giờ bắt đầu</label>
+            <input class="form-input" type="time" id="f-start" value="09:00">
+          </div>
+          <div class="form-field">
+            <label class="required">Giờ kết thúc</label>
+            <input class="form-input" type="time" id="f-end" value="12:00">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PERSONNEL -->
+    <div class="form-section">
+      <div class="form-section-header yellow">👥 Nhân sự thực hiện</div>
+      <div class="form-section-body">
+        <div class="form-field">
+          <label class="required">Người thực hiện (chọn nhiều)</label>
+          <div class="chip-select" id="executor-chips">
+            ${userOptions}
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Người giám sát</label>
+          <input class="form-input" type="text" id="f-supervisor" placeholder="Tên hoặc mã nhân viên">
+        </div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Thuê PG ngoài</span>
+          <div class="toggle" id="toggle-pg" onclick="togglePg()"></div>
+        </div>
+        <div id="pg-fields" style="display:none;">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Số PG</label>
+              <input class="form-input" type="number" id="f-pg-count" min="1" max="10" placeholder="2" oninput="calcCost()">
+            </div>
+            <div class="form-field">
+              <label>Số giờ</label>
+              <select class="form-input" id="f-pg-hours" onchange="calcCost()">
+                ${pgOptions}
+              </select>
+            </div>
+          </div>
+          <div class="form-field">
+            <label>Ghi chú PG</label>
+            <input class="form-input" type="text" id="f-pg-note" placeholder="Yêu cầu đặc biệt...">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COST -->
+    <div class="form-section">
+      <div class="form-section-header teal">💰 Chi phí địa điểm</div>
+      <div class="form-section-body">
+        <div class="form-field">
+          <label>Chi phí thuê địa điểm (VNĐ)</label>
+          <input class="form-input" type="number" id="f-location-cost" placeholder="0" oninput="calcCost()">
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Loại chi phí</label>
+            <select class="form-input" id="f-cost-type">
+              <option value="">-- Chọn --</option>
+              <option value="Theo trading term">Theo trading term</option>
+              <option value="Ngân sách marketing">Ngân sách marketing</option>
+              <option value="Miễn phí">Miễn phí</option>
+              <option value="Khác">Khác</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Có hóa đơn?</label>
+            <div class="toggle-wrap" style="padding:10px 0 0;">
+              <div class="toggle" id="toggle-invoice" onclick="toggleInvoice()"></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Ghi chú chi phí</label>
+          <input class="form-input" type="text" id="f-cost-note" placeholder="Ghi chú thêm...">
+        </div>
+      </div>
+    </div>
+
+    <!-- PRODUCTS -->
+    <div class="form-section">
+      <div class="form-section-header green">📦 Sản phẩm sampling</div>
+      <div class="form-section-body">
+        <div class="form-field">
+          <label class="required">Chọn sản phẩm & số lượng mẫu</label>
+          <div id="product-list">${productList}</div>
+        </div>
+        <div class="form-field">
+          <label>Món ăn demo (nhập từng món)</label>
+          <div id="dishes-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addDish()">＋ Thêm món</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- GIFTS -->
+    <div class="form-section">
+      <div class="form-section-header" style="background:var(--yellow2);color:var(--navy);">🎁 Quà tặng</div>
+      <div class="form-section-body">
+        <div id="gifts-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <button class="btn btn-secondary btn-sm" onclick="addGift()">＋ Thêm quà</button>
+      </div>
+    </div>
+
+    <!-- EXTRAS -->
+    <div class="form-section">
+      <div class="form-section-header" style="background:var(--gray);color:#fff;">⚙️ Thông tin bổ sung</div>
+      <div class="form-section-body">
+        <div class="toggle-wrap">
+          <span class="toggle-label">Có chương trình KM cho NTD</span>
+          <div class="toggle" id="toggle-promo" onclick="togglePromo()"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>On/Off post</label>
+            <select class="form-input" id="f-post-type">
+              <option value="">-- Chọn --</option>
+              <option value="On post">On post</option>
+              <option value="Off post">Off post</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Loại booth</label>
+            <select class="form-input" id="f-booth-type">
+              <option value="">-- Chọn --</option>
+              <option value="Booth">Booth</option>
+              <option value="Khay">Khay</option>
+            </select>
+          </div>
+        </div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Có ra ụ</span>
+          <div class="toggle" id="toggle-kiosk" onclick="toggleKiosk()"></div>
+        </div>
+        <div class="form-field">
+          <label>Mục đích hoạt động</label>
+          <input class="form-input" type="text" id="f-purpose" placeholder="Tăng nhận diện, launch sản phẩm...">
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Dự kiến người thử</label>
+            <input class="form-input" type="number" id="f-est-tasters" placeholder="100">
+          </div>
+          <div class="form-field">
+            <label>Dự kiến doanh số (đ)</label>
+            <input class="form-input" type="number" id="f-est-sales" placeholder="5000000">
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Ghi chú khác</label>
+          <textarea class="form-input" id="f-notes" placeholder="Thông tin thêm..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- COST SUMMARY -->
+    <div class="cost-summary" id="cost-summary">
+      <div class="cost-row"><span>Chi phí PG</span><span id="cs-pg">—</span></div>
+      <div class="cost-row"><span>Chi phí địa điểm</span><span id="cs-loc">—</span></div>
+      <div class="cost-row"><span>Giá trị quà tặng</span><span id="cs-gift">—</span></div>
+      <div class="cost-row total"><span>Tổng ước tính</span><span id="cs-total">—</span></div>
+    </div>
+    <div class="spacer"></div>
+  `;
+
+  // Load users for executor chips
+  loadExecutorOptions();
+}
+
+function getUserOptions() { return ''; } // chips loaded async
+
+async function loadExecutorOptions() {
+  try {
+    const res = await api('GET', { action:'getUsers', channel: currentUser.channel, region: currentUser.region });
+    if (!res.success) return;
+    const users = res.data;
+    const chipsEl = document.getElementById('executor-chips');
+    if (!chipsEl) return;
+    chipsEl.innerHTML = users.map(u =>
+      `<div class="chip-option" data-code="${u.code}" onclick="toggleExecutor(this, '${u.code}')">
+        ${u.name} <span style="font-size:10px;opacity:0.7;">${u.role === 'Sales Representative' ? '(Rep)' : ''}</span>
+      </div>`
+    ).join('');
+    // Auto-select self
+    if (currentUser.role !== 'Sales Manager') {
+      const self = chipsEl.querySelector(`[data-code="${currentUser.code}"]`);
+      if (self) { self.classList.add('selected'); planFormData.executors = [currentUser.code]; }
+    }
+  } catch(e) {}
+}
+
+function toggleExecutor(el, code) {
+  el.classList.toggle('selected');
+  if (el.classList.contains('selected')) {
+    planFormData.executors.push(code);
+  } else {
+    planFormData.executors = planFormData.executors.filter(c => c !== code);
+  }
+}
+
+function toggleProduct(ma) {
+  const check = document.querySelector(`#prod-${ma} .product-check`);
+  const qtyWrap = document.getElementById(`qty-wrap-${ma}`);
+  const isChecked = check.classList.toggle('checked');
+  qtyWrap.style.display = isChecked ? 'block' : 'none';
+  if (isChecked) {
+    document.getElementById(`qty-${ma}`).value = 1;
+    planFormData.samples = planFormData.samples.filter(s => s.ma !== ma);
+    planFormData.samples.push({ ma, so_luong: 1 });
+  } else {
+    planFormData.samples = planFormData.samples.filter(s => s.ma !== ma);
+    document.getElementById(`qty-${ma}`).value = '';
+  }
+  calcCost();
+}
+
+function updateSample(ma) {
+  const qty = parseInt(document.getElementById(`qty-${ma}`).value) || 1;
+  const idx = planFormData.samples.findIndex(s => s.ma === ma);
+  if (idx >= 0) planFormData.samples[idx].so_luong = qty;
+}
+
+function addDish() {
+  const el = document.getElementById('dishes-list');
+  const idx = planFormData.dishes.length;
+  planFormData.dishes.push({ ten: '', tu_mau: '' });
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:6px;align-items:center;';
+  div.innerHTML = `
+    <input class="form-input" type="text" placeholder="Tên món ăn..." style="flex:1;"
+      oninput="planFormData.dishes[${idx}].ten = this.value">
+    <button class="btn btn-secondary btn-sm" style="width:36px;padding:0;font-size:18px;" onclick="this.parentElement.remove();planFormData.dishes.splice(${idx},1)">×</button>`;
+  el.appendChild(div);
+}
+
+function addGift() {
+  const el = document.getElementById('gifts-list');
+  const idx = planFormData.gifts.length;
+  planFormData.gifts.push({ ten: '', so_luong: 0, gia_tri: 0 });
+  const div = document.createElement('div');
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 60px 80px 32px;gap:6px;align-items:center;';
+  div.innerHTML = `
+    <input class="form-input" type="text" placeholder="Tên quà..." oninput="planFormData.gifts[${idx}].ten=this.value;calcCost()">
+    <input class="form-input" type="number" placeholder="SL" min="0" oninput="planFormData.gifts[${idx}].so_luong=+this.value;calcCost()">
+    <input class="form-input" type="number" placeholder="Giá trị" min="0" oninput="planFormData.gifts[${idx}].gia_tri=+this.value;calcCost()">
+    <button class="btn btn-danger btn-sm" style="width:32px;padding:0;font-size:16px;" onclick="this.parentElement.remove();planFormData.gifts.splice(${idx},1);calcCost()">×</button>`;
+  el.appendChild(div);
+}
+
+function togglePg() {
+  const tog = document.getElementById('toggle-pg');
+  planFormData.hiresPg = !planFormData.hiresPg;
+  tog.classList.toggle('on', planFormData.hiresPg);
+  document.getElementById('pg-fields').style.display = planFormData.hiresPg ? 'flex' : 'none';
+  if (planFormData.hiresPg) document.getElementById('pg-fields').style.flexDirection = 'column';
+  calcCost();
+}
+function togglePromo()   { const t = document.getElementById('toggle-promo');   planFormData.hasPromo   = !planFormData.hasPromo;   t.classList.toggle('on', planFormData.hasPromo); }
+function toggleKiosk()   { const t = document.getElementById('toggle-kiosk');   planFormData.hasKiosk   = !planFormData.hasKiosk;   t.classList.toggle('on', planFormData.hasKiosk); }
+function toggleInvoice() { const t = document.getElementById('toggle-invoice'); planFormData.hasInvoice = !planFormData.hasInvoice; t.classList.toggle('on', planFormData.hasInvoice); }
+
+function updateLocationName(val) {
+  const el = document.getElementById('f-location-name');
+  if (el && val) el.value = val;
+}
+
+function calcCost() {
+  const pgCount = parseInt(document.getElementById('f-pg-count')?.value) || 0;
+  const pgHours = parseFloat(document.getElementById('f-pg-hours')?.value) || 0;
+  const pg = masterData.pgPricing.find(p => Number(p.hours) === pgHours);
+  const pgCost = planFormData.hiresPg ? pgCount * (pg ? pg.ratePerPg : 0) : 0;
+  const locCost = parseFloat(document.getElementById('f-location-cost')?.value) || 0;
+  const giftVal = planFormData.gifts.reduce((s, g) => s + ((g.so_luong || 0) * (g.gia_tri || 0)), 0);
+  const total = pgCost + locCost + giftVal;
+  const set = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = fmtCurrency(val); };
+  set('cs-pg', pgCost); set('cs-loc', locCost); set('cs-gift', giftVal); set('cs-total', total);
+}
+
+async function submitPlan() {
+  const btn = document.getElementById('btn-submit-plan');
+  // Collect all form values
+  const data = {
+    locationName:  document.getElementById('f-location-name')?.value?.trim(),
+    region:        document.getElementById('f-region')?.value?.trim(),
+    date:          document.getElementById('f-date')?.value,
+    timeStart:     document.getElementById('f-start')?.value,
+    timeEnd:       document.getElementById('f-end')?.value,
+    executors:     planFormData.executors,
+    supervisor:    document.getElementById('f-supervisor')?.value?.trim(),
+    hiresPg:       planFormData.hiresPg,
+    pgCount:       parseInt(document.getElementById('f-pg-count')?.value) || 0,
+    pgHours:       parseFloat(document.getElementById('f-pg-hours')?.value) || 0,
+    pgNote:        document.getElementById('f-pg-note')?.value?.trim(),
+    locationCost:  parseFloat(document.getElementById('f-location-cost')?.value) || 0,
+    costType:      document.getElementById('f-cost-type')?.value,
+    hasInvoice:    planFormData.hasInvoice,
+    costNote:      document.getElementById('f-cost-note')?.value?.trim(),
+    hasPromo:      planFormData.hasPromo,
+    postType:      document.getElementById('f-post-type')?.value,
+    hasKiosk:      planFormData.hasKiosk,
+    boothType:     document.getElementById('f-booth-type')?.value,
+    samples:       planFormData.samples,
+    dishes:        planFormData.dishes,
+    gifts:         planFormData.gifts,
+    purpose:       document.getElementById('f-purpose')?.value?.trim(),
+    estTasters:    parseInt(document.getElementById('f-est-tasters')?.value) || 0,
+    estSales:      parseFloat(document.getElementById('f-est-sales')?.value) || 0,
+    notes:         document.getElementById('f-notes')?.value?.trim(),
+  };
+
+  btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
+  loading(true, 'Đang lưu kế hoạch...');
+  try {
+    const action = currentPlanId ? 'updatePlan' : 'createPlan';
+    const res = await api('POST', { action, data, userCode: currentUser.code, planId: currentPlanId });
+    if (res.success) {
+      showToast(res.message || 'Thành công!', 'success', 4000);
+      showScreen('plans');
+      loadMyPlans();
+    } else {
+      showToast(res.error || 'Có lỗi xảy ra', 'error');
+    }
+  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+  finally { btn.disabled = false; btn.textContent = '📤 Gửi kế hoạch để duyệt'; loading(false); }
+}
+
+// =====================================================
+// REPORT FORM
+// =====================================================
+function initReport(planId) {
+  currentPlanId = planId;
+  reportFormData = { imgLocation:[], imgFood:[], imgOverview:[], imgOther:[], samplesUsed:[], markCompleted: false };
+  document.getElementById('report-plan-id').textContent = planId;
+  renderReportForm(planId);
+  showScreen('report');
+}
+
+function renderReportForm(planId) {
+  document.getElementById('report-content').innerHTML = `
+    <div class="spacer" style="height:8px;"></div>
+
+    <!-- TIMEMARK NOTICE -->
+    <div class="timemark-notice" style="margin:0 16px 12px;">
+      Lưu ý đội sales: Tất cả hình ảnh phải được chụp qua app <b>Timemark</b> theo quy định của team sales.
+    </div>
+
+    <!-- IMAGE UPLOADS -->
+    <div class="form-section">
+      <div class="form-section-header">📸 Hình ảnh báo cáo</div>
+      <div class="form-section-body">
+        ${imageUploadBlock('imgLocation', '1. Hình chụp tên địa điểm sampling', true, 3)}
+        ${imageUploadBlock('imgFood', '2. Hình chụp món ăn (từ trên xuống)', true, 5)}
+        ${imageUploadBlock('imgOverview', '3. Hình toàn cảnh (nhân viên + booth + đồng phục)', true, 5)}
+        ${imageUploadBlock('imgOther', '4. Hình ảnh khác', false, 27)}
+      </div>
+    </div>
+
+    <!-- EFFECTIVENESS -->
+    <div class="form-section">
+      <div class="form-section-header yellow">📊 Hiệu quả hoạt động</div>
+      <div class="form-section-body">
+        <div class="form-row">
+          <div class="form-field">
+            <label class="required">Số người thử (ước tính)</label>
+            <input class="form-input" type="number" id="r-tasters" min="0" placeholder="85" inputmode="numeric">
+          </div>
+          <div class="form-field">
+            <label>Doanh số trong buổi (đ)</label>
+            <input class="form-input" type="number" id="r-sales" min="0" placeholder="0" inputmode="numeric">
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Phản hồi từ khách hàng / người thử</label>
+          <textarea class="form-input" id="r-feedback" placeholder="Khách hàng phản hồi như thế nào về sản phẩm?..."></textarea>
+        </div>
+        <div class="form-field">
+          <label>Ghi chú khác</label>
+          <textarea class="form-input" id="r-notes" placeholder="Lưu ý cho lần sau, đề xuất..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- SAMPLES USED -->
+    <div class="form-section">
+      <div class="form-section-header green">📦 Mẫu đã sử dụng</div>
+      <div class="form-section-body" id="samples-used-list">
+        <div class="small text-gray">Đang tải danh sách mẫu được duyệt...</div>
+      </div>
+    </div>
+
+    <!-- COMPLETE TOGGLE -->
+    <div class="form-section">
+      <div class="form-section-header" style="background:var(--navy);color:#fff;">✅ Hoàn thành</div>
+      <div class="form-section-body">
+        <div class="toggle-wrap">
+          <div>
+            <div class="toggle-label">Đánh dấu kế hoạch hoàn thành</div>
+            <div class="small text-gray">Chọn nếu đây là buổi báo cáo cuối cùng</div>
+          </div>
+          <div class="toggle" id="toggle-completed" onclick="reportFormData.markCompleted=!reportFormData.markCompleted;this.classList.toggle('on',reportFormData.markCompleted)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+  `;
+
+  // Load approved samples
+  loadApprovedSamplesForReport(planId);
+}
+
+function imageUploadBlock(key, title, required, maxAdd) {
+  return `
+    <div class="img-upload-section">
+      <div class="img-upload-title">
+        ${required ? '<div class="required-dot"></div>' : ''}
+        ${title}
+        <span class="small text-gray">(tối đa ${maxAdd} ảnh)</span>
+      </div>
+      <div class="img-upload-area" id="upload-area-${key}">
+        <input type="file" accept="image/*" multiple onchange="handleImageSelect(event,'${key}',${maxAdd})">
+        <div class="img-upload-icon">📷</div>
+        <div class="img-upload-text">Nhấn để chọn ảnh</div>
+        <div class="img-count" id="count-${key}">0 / ${maxAdd} ảnh</div>
+      </div>
+      <div class="img-preview-grid" id="preview-${key}"></div>
+    </div>`;
+}
+
+async function loadApprovedSamplesForReport(planId) {
+  try {
+    const res = await api('GET', { action:'getPlanDetail', planId });
+    const el = document.getElementById('samples-used-list');
+    if (!res.success || !el) return;
+    const p = res.data;
+    const approvedSamples = (p.approval && p.approval.samples && p.approval.samples.length > 0)
+      ? p.approval.samples : p.samples;
+    if (!approvedSamples || approvedSamples.length === 0) {
+      el.innerHTML = '<div class="small text-gray">Không có thông tin mẫu được duyệt</div>'; return;
+    }
+    reportFormData.samplesUsed = approvedSamples.map(s => ({ ma: s.ma, so_luong: 0 }));
+    el.innerHTML = approvedSamples.map((s, i) => {
+      const prod = masterData.products.find(p => p.ma === s.ma);
+      return `<div class="product-item">
+        <div class="product-info">
+          <div class="product-name">${prod ? prod.ten : s.ma}</div>
+          <div class="product-price">Được duyệt: ${s.so_luong} lon/gói</div>
+        </div>
+        <div style="width:90px;">
+          <input class="form-input" type="number" min="0" max="${s.so_luong + 20}" placeholder="0"
+            value="${s.so_luong}" style="text-align:center;padding:8px 6px;"
+            oninput="reportFormData.samplesUsed[${i}].so_luong=+this.value">
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+// Image handling — compress before preview
+async function handleImageSelect(event, key, maxAdd) {
+  const files = Array.from(event.target.files);
+  const current = reportFormData[key].length;
+  const remaining = maxAdd - current;
+  const toProcess = files.slice(0, remaining);
+  const countEl = document.getElementById(`count-${key}`);
+  const previewEl = document.getElementById(`preview-${key}`);
+
+  for (const file of toProcess) {
+    const compressed = await compressImage(file, TARGET_IMG_KB);
+    reportFormData[key].push({ dataUrl: compressed.dataUrl, name: file.name, size: compressed.size });
+    const item = document.createElement('div');
+    item.className = 'img-preview-item';
+    item.innerHTML = `<img src="${compressed.dataUrl}"><div class="img-remove" onclick="removeImage('${key}',${reportFormData[key].length-1},this.parentElement)">×</div>`;
+    previewEl.appendChild(item);
+  }
+  if (countEl) countEl.textContent = `${reportFormData[key].length} / ${maxAdd} ảnh`;
+  event.target.value = '';
+
+  if (files.length > remaining) {
+    showToast(`Chỉ thêm được ${remaining} ảnh nữa (tối đa ${maxAdd})`, 'error');
+  }
+}
+
+function removeImage(key, idx, el) {
+  reportFormData[key].splice(idx, 1);
+  el.remove();
+  // Re-index remaining
+  const maxAdd = key === 'imgLocation' ? 3 : key === 'imgFood' ? 5 : key === 'imgOverview' ? 5 : 27;
+  const countEl = document.getElementById(`count-${key}`);
+  if (countEl) countEl.textContent = `${reportFormData[key].length} / ${maxAdd} ảnh`;
+}
+
+// Client-side image compression using Canvas
+function compressImage(file, targetKB) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        const maxDim = 1280;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim/w, maxDim/h);
+          w = Math.round(w * ratio); h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+
+        let quality = 0.85;
+        const tryCompress = () => {
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          const sizeKB = Math.round((dataUrl.length * 3) / 4 / 1024);
+          if (sizeKB <= targetKB || quality <= 0.3) {
+            resolve({ dataUrl, size: sizeKB });
+          } else {
+            quality -= 0.1;
+            tryCompress();
+          }
+        };
+        tryCompress();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function submitReport() {
+  const btn = document.getElementById('btn-submit-report');
+  const data = {
+    actualTasters: parseInt(document.getElementById('r-tasters')?.value) || 0,
+    actualSales:   parseFloat(document.getElementById('r-sales')?.value) || 0,
+    feedback:      document.getElementById('r-feedback')?.value?.trim(),
+    notes:         document.getElementById('r-notes')?.value?.trim(),
+    samplesUsed:   reportFormData.samplesUsed,
+    markCompleted: reportFormData.markCompleted,
+    // Image data included — will be uploaded via Drive API separately
+    imgLocation:   reportFormData.imgLocation.map(i => i.name),
+    imgFood:       reportFormData.imgFood.map(i => i.name),
+    imgOverview:   reportFormData.imgOverview.map(i => i.name),
+    imgOther:      reportFormData.imgOther.map(i => i.name),
+  };
+
+  if (reportFormData.imgLocation.length === 0) { showToast('Bắt buộc có hình tên địa điểm', 'error'); return; }
+  if (reportFormData.imgFood.length === 0)     { showToast('Bắt buộc có hình món ăn', 'error'); return; }
+  if (reportFormData.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
+  if (!data.actualTasters)                     { showToast('Vui lòng nhập số người thử', 'error'); return; }
+
+  btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
+  loading(true, 'Đang lưu báo cáo...');
+  try {
+    const res = await api('POST', { action:'submitReport', planId: currentPlanId, data, userCode: currentUser.code });
+    if (res.success) {
+      showToast('Báo cáo đã được ghi nhận! 🎉', 'success', 4000);
+      showScreen('plans');
+      loadMyPlans();
+    } else {
+      showToast(res.error || 'Có lỗi xảy ra', 'error');
+    }
+  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+  finally { btn.disabled = false; btn.textContent = '📊 Gửi báo cáo'; loading(false); }
+}
+
+// =====================================================
+// CALENDAR
+// =====================================================
+async function renderCalendar() {
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
+  document.getElementById('cal-month-label').textContent = calMonth.toLocaleDateString('vi-VN', {month:'short', year:'numeric'});
+
+  loading(true);
+  try {
+    const res = await api('GET', { action:'getCalendar', userCode: currentUser.code, month: monthStr });
+    calendarData = res.success ? res.data : {};
+  } catch(e) { calendarData = {}; }
+  loading(false);
+
+  const el = document.getElementById('calendar-content');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const firstDay = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const adjustedFirst = (firstDay + 6) % 7; // Mon=0
+
+  let html = `<div class="cal-grid">
+    ${['T2','T3','T4','T5','T6','T7','CN'].map(d => `<div class="cal-day-label">${d}</div>`).join('')}
+    ${Array(adjustedFirst).fill('<div class="cal-day empty"></div>').join('')}`;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${monthStr}-${String(d).padStart(2,'0')}`;
+    const plans = calendarData[dateStr] || [];
+    const isToday = new Date(y,m,d).getTime() === today.getTime();
+    const hasPlan = plans.length > 0;
+    const allDone = hasPlan && plans.every(p => p.status === 'hoan_thanh');
+    let cls = isToday ? 'today' : hasPlan ? (allDone ? 'has-plan done' : 'has-plan') : '';
+    html += `<div class="cal-day ${cls}" onclick="showCalDay('${dateStr}',${d})">
+      <span>${d}</span>
+      ${hasPlan ? `<div class="cal-dot"></div>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+
+  // Legend
+  html += `<div style="display:flex;gap:12px;padding:0 16px 12px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:6px;font-size:12px;"><div style="width:14px;height:14px;border-radius:3px;background:var(--red-light);border:1px solid var(--red);"></div>Có kế hoạch</div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:12px;"><div style="width:14px;height:14px;border-radius:3px;background:#d1f2eb;border:1px solid var(--green);"></div>Hoàn thành</div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:12px;"><div style="width:14px;height:14px;border-radius:3px;background:var(--navy);"></div>Hôm nay</div>
+  </div>`;
+
+  el.innerHTML = html;
+}
+
+function prevMonth() { calMonth.setMonth(calMonth.getMonth()-1); renderCalendar(); }
+function nextMonth() { calMonth.setMonth(calMonth.getMonth()+1); renderCalendar(); }
+
+function showCalDay(dateStr, day) {
+  const plans = calendarData[dateStr];
+  if (!plans || plans.length === 0) return;
+  showModal(`📅 Ngày ${day}/${calMonth.getMonth()+1}`,
+    plans.map(p => `<div class="plan-card" style="margin:0 0 8px;" onclick="viewPlanDetail('${p.planId}');closeModal()">
+      <div class="plan-card-top">
+        <div><div class="plan-card-name">${p.location}</div><div style="font-size:12px;color:var(--gray2);">${p.timeStart}–${p.timeEnd}</div></div>
+        ${statusChip(p.status)}
+      </div>
+    </div>`).join(''),
+    [{ label:'Đóng', action:'closeModal()', cls:'btn-secondary' }]
+  );
+}
+
+// =====================================================
+// DASHBOARD
+// =====================================================
+function showDashTab(tab) {
+  currentDashTab = tab;
+  document.querySelectorAll('.dash-tab').forEach((el, i) => {
+    el.classList.toggle('active', ['overview','approval','performance','ai'][i] === tab);
+  });
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  const month = document.getElementById('dash-filter-month')?.value || '';
+  const channel = document.getElementById('dash-filter-channel')?.value || '';
+  const el = document.getElementById('dash-content');
+  el.innerHTML = '<div class="empty-state"><div class="ai-loader"></div><div class="empty-sub">Đang tải...</div></div>';
+
+  if (currentDashTab === 'overview') {
+    try {
+      const res = await api('GET', { action:'getDashboardOverview', month, channel });
+      if (res.success) renderDashOverview(res.data, el);
+      else el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">${res.error}</div></div>`;
+    } catch(e) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối</div></div>`; }
+  } else if (currentDashTab === 'approval') {
+    try {
+      const res = await api('GET', { action:'getPendingApprovals' });
+      if (res.success) renderDashApproval(res.data, el);
+    } catch(e) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div></div>'; }
+  } else if (currentDashTab === 'performance') {
+    try {
+      const res = await api('GET', { action:'getDashboardPerformance', month, channel });
+      if (res.success) renderDashPerformance(res.data, el);
+    } catch(e) {}
+  } else if (currentDashTab === 'ai') {
+    renderDashAi(el, month, channel);
+  }
+}
+
+function renderDashOverview(d, el) {
+  const lv = currentLang === 'vi';
+  const s  = d.statusBreakdown || {};
+  const e  = d.effectiveness || {};
+  const c  = d.costs || {};
+
+  // Pipeline
+  let html = `<div class="pipeline">
+    <div class="pipeline-item"><div class="pipeline-num" style="color:var(--red);">${s.cho_duyet||0}</div><div class="pipeline-label">${lv?'Chờ duyệt':'Pending'}</div></div>
+    <div class="pipeline-item"><div class="pipeline-num" style="color:var(--green);">${s.da_duyet||0}</div><div class="pipeline-label">${lv?'Đã duyệt':'Approved'}</div></div>
+    <div class="pipeline-item"><div class="pipeline-num" style="color:var(--teal);">${s.hoan_thanh||0}</div><div class="pipeline-label">${lv?'Hoàn thành':'Done'}</div></div>
+    <div class="pipeline-item"><div class="pipeline-num" style="color:var(--gray2);">${d.totalPlans||0}</div><div class="pipeline-label">${lv?'Tổng buổi':'Total'}</div></div>
+  </div>`;
+
+  // KPI cards
+  html += `<div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-label">${t('totalTasters')}</div><div class="kpi-value red">${fmtNum(e.totalTasters)}</div><div class="kpi-sub">${lv?'người':'people'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">${t('avgPerEvent')}</div><div class="kpi-value">${fmtNum(e.avgTastersPerEvent)}</div><div class="kpi-sub">${lv?'người/buổi':'per event'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">${t('totalSales')}</div><div class="kpi-value green">${fmtCurrency(e.totalActualSales)}</div><div class="kpi-sub">&nbsp;</div></div>
+    <div class="kpi-card"><div class="kpi-label">${t('costPerContact')}</div><div class="kpi-value teal">${fmtCurrency(e.costPerContact)}</div><div class="kpi-sub">&nbsp;</div></div>
+  </div>`;
+
+  // Cost breakdown
+  html += `<div style="padding:14px 16px 4px;"><div class="card-title">${lv?'Chi phí':'Cost breakdown'}</div></div>
+  <div class="cost-summary" style="margin:0 16px 14px;">
+    <div class="cost-row"><span>PG</span><span>${fmtCurrency(c.pg)}</span></div>
+    <div class="cost-row"><span>${lv?'Địa điểm':'Location'}</span><span>${fmtCurrency(c.location)}</span></div>
+    <div class="cost-row"><span>${lv?'Quà tặng':'Gifts'}</span><span>${fmtCurrency(c.gifts)}</span></div>
+    <div class="cost-row total"><span>${lv?'Tổng':'Total'}</span><span>${fmtCurrency(c.total)}</span></div>
+  </div>`;
+
+  // Top SKUs
+  if (d.topSkus && d.topSkus.length > 0) {
+    const maxQty = d.topSkus[0].qty;
+    html += `<div style="padding:0 16px 4px;"><div class="card-title">${t('topSkus')}</div></div>
+    <div class="card" style="margin:0 16px 12px;"><div class="card-body"><div class="bar-chart">`;
+    d.topSkus.forEach(s => {
+      const prod = masterData.products.find(p => p.ma === s.ma);
+      const name = prod ? prod.ten : s.ma;
+      html += `<div class="bar-row">
+        <div class="bar-label" title="${name}">${name}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round((s.qty/maxQty)*100)}%"></div></div>
+        <div class="bar-value">${fmtNum(s.qty)}</div>
+      </div>`;
+    });
+    html += `</div></div></div>`;
+  }
+
+  // Channel breakdown
+  const cb = d.channelBreakdown || {};
+  const channels = Object.keys(cb);
+  if (channels.length > 0) {
+    const maxCount = Math.max(...channels.map(c => cb[c].count), 1);
+    html += `<div style="padding:0 16px 4px;"><div class="card-title">${t('channelBreakdown')}</div></div>
+    <div class="card" style="margin:0 16px 12px;"><div class="card-body"><div class="bar-chart">`;
+    channels.forEach(ch => {
+      html += `<div class="bar-row">
+        <div class="bar-label">${ch}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round((cb[ch].count/maxCount)*100)}%;background:var(--teal);"></div></div>
+        <div class="bar-value">${cb[ch].count} buổi</div>
+      </div>`;
+    });
+    html += `</div></div></div>`;
+  }
+
+  // Monthly trend
+  if (d.monthlyTrend && d.monthlyTrend.length > 1) {
+    // Simple inline sparkline using emoji bars
+    html += `<div style="padding:0 16px 4px;"><div class="card-title">${t('byMonth')}</div></div>
+    <div class="card" style="margin:0 16px 12px;"><div class="card-body"><div class="bar-chart">`;
+    const maxEv = Math.max(...d.monthlyTrend.map(m => m.events), 1);
+    d.monthlyTrend.slice(-6).forEach(m => {
+      html += `<div class="bar-row">
+        <div class="bar-label">${m.month}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round((m.events/maxEv)*100)}%;background:var(--yellow2);"></div></div>
+        <div class="bar-value">${m.events}</div>
+      </div>`;
+    });
+    html += `</div></div></div>`;
+  }
+
+  html += '<div class="spacer"></div>';
+  el.innerHTML = html;
+}
+
+function renderDashApproval(plans, el) {
+  if (!plans || plans.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Không có kế hoạch chờ duyệt</div></div>';
+    return;
+  }
+  let html = `<div style="padding:12px 16px 0;font-size:13px;color:var(--gray2);">${plans.length} kế hoạch đang chờ duyệt</div>`;
+  plans.forEach(p => {
+    html += `<div class="approval-card">
+      <div class="approval-card-top">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <div class="approval-card-name">${p.locationName}</div>
+            <div class="approval-card-meta">${p.id} · ${fmtDate(p.date)} · ${p.region}</div>
+            <div class="approval-card-meta" style="margin-top:4px;">⏰ ${p.timeStart}–${p.timeEnd} · 👤 ${(p.executors||[]).length} người TH</div>
+          </div>
+          ${statusChip(p.status)}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          ${p.hiresPg ? `<div class="meta-chip">👥 ${p.pgCount} PG × ${p.pgHours}h</div>` : ''}
+          ${p.locationCost ? `<div class="meta-chip">💰 ${fmtCurrency(p.locationCost)}</div>` : ''}
+          <div class="meta-chip">📦 ${(p.samples||[]).length} SKU</div>
+          <div class="meta-chip" style="font-weight:700;">Tổng: ${fmtCurrency(p.totalEstCost)}</div>
+        </div>
+      </div>
+      <div class="approval-actions">
+        <button class="btn btn-green btn-sm" onclick="quickApprove('${p.id}')">✅ Duyệt</button>
+        <button class="btn btn-secondary btn-sm" onclick="requestEditModal('${p.id}')">✏️ Chỉnh sửa</button>
+        <button class="btn btn-danger btn-sm" onclick="rejectModal('${p.id}')">❌ Từ chối</button>
+        <button class="btn btn-outline btn-sm" onclick="viewPlanDetail('${p.id}')">👁 Xem</button>
+      </div>
+    </div>`;
+  });
+  html += '<div class="spacer"></div>';
+  el.innerHTML = html;
+}
+
+async function quickApprove(planId) {
+  if (!confirm('Duyệt kế hoạch ' + planId + '?')) return;
+  loading(true, 'Đang duyệt...');
+  try {
+    const res = await api('POST', { action:'approvePlan', planId, data:{}, userCode: currentUser.code });
+    if (res.success) { showToast('Đã duyệt thành công', 'success'); loadDashboard(); }
+    else showToast(res.error, 'error');
+  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+  finally { loading(false); }
+}
+
+function rejectModal(planId) {
+  showModal('❌ Từ chối kế hoạch', `
+    <div style="font-size:14px;color:var(--gray);margin-bottom:12px;">Kế hoạch: <b>${planId}</b></div>
+    <div class="form-field"><label class="required">Lý do từ chối</label>
+    <textarea class="form-input" id="reject-reason" placeholder="Nhập lý do..." style="min-height:100px;"></textarea></div>`,
+    [
+      { label: 'Hủy', action: 'closeModal()', cls: 'btn-secondary' },
+      { label: '❌ Từ chối', action: `doReject('${planId}')`, cls: 'btn-danger' },
+    ]
+  );
+}
+async function doReject(planId) {
+  const reason = document.getElementById('reject-reason')?.value?.trim();
+  if (!reason) { showToast('Vui lòng nhập lý do', 'error'); return; }
+  closeModal(); loading(true, 'Đang xử lý...');
+  try {
+    const res = await api('POST', { action:'rejectPlan', planId, reason, userCode: currentUser.code });
+    if (res.success) { showToast('Đã từ chối kế hoạch', 'success'); loadDashboard(); }
+    else showToast(res.error, 'error');
+  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+  finally { loading(false); }
+}
+
+function requestEditModal(planId) {
+  showModal('✏️ Yêu cầu chỉnh sửa', `
+    <div style="font-size:14px;color:var(--gray);margin-bottom:12px;">Kế hoạch: <b>${planId}</b></div>
+    <div class="form-field"><label class="required">Nội dung cần chỉnh sửa</label>
+    <textarea class="form-input" id="edit-notes" placeholder="Cần chỉnh sửa những gì?..." style="min-height:100px;"></textarea></div>`,
+    [
+      { label: 'Hủy', action: 'closeModal()', cls: 'btn-secondary' },
+      { label: '✏️ Gửi yêu cầu', action: `doRequestEdit('${planId}')`, cls: 'btn-primary' },
+    ]
+  );
+}
+async function doRequestEdit(planId) {
+  const notes = document.getElementById('edit-notes')?.value?.trim();
+  if (!notes) { showToast('Vui lòng nhập nội dung cần chỉnh sửa', 'error'); return; }
+  closeModal(); loading(true);
+  try {
+    const res = await api('POST', { action:'requestEdit', planId, notes, userCode: currentUser.code });
+    if (res.success) { showToast('Đã gửi yêu cầu chỉnh sửa', 'success'); loadDashboard(); }
+    else showToast(res.error, 'error');
+  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+  finally { loading(false); }
+}
+
+function renderDashPerformance(d, el) {
+  if (!d || !d.items || d.items.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">Chưa có dữ liệu hoàn thành</div></div>';
+    return;
+  }
+  const lv = currentLang === 'vi';
+  let html = `<div style="padding:12px 16px 0;font-size:13px;color:var(--gray2);">So sánh Plan vs Thực tế</div>`;
+  d.items.filter(p => p.status === 'hoan_thanh').forEach(p => {
+    const tRate = p.tasterRate !== null ? p.tasterRate + '%' : '—';
+    const sRate = p.salesRate  !== null ? p.salesRate  + '%' : '—';
+    const tColor = p.tasterRate >= 100 ? 'var(--green)' : p.tasterRate >= 70 ? 'var(--yellow2)' : 'var(--red)';
+    html += `<div class="card"><div class="card-body">
+      <div style="font-weight:700;font-size:14px;">${p.locationName}</div>
+      <div style="font-size:12px;color:var(--gray2);margin-bottom:10px;">${fmtDate(p.date)} · ${p.region}</div>
+      <div class="bar-row">
+        <div class="bar-label">${lv?'Người thử':'Tasters'}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.min(p.tasterRate||0,100)}%;background:${tColor};"></div></div>
+        <div class="bar-value" style="color:${tColor};font-weight:700;">${tRate}</div>
+      </div>
+      <div style="font-size:12px;color:var(--gray2);">Plan: ${fmtNum(p.estTasters)} · TT: ${fmtNum(p.actualTasters)}</div>
+      <div style="margin-top:8px;" class="bar-row">
+        <div class="bar-label">${lv?'Doanh số':'Sales'}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.min(p.salesRate||0,100)}%;background:var(--teal);"></div></div>
+        <div class="bar-value" style="color:var(--teal);font-weight:700;">${sRate}</div>
+      </div>
+      <div style="font-size:12px;color:var(--gray2);">Plan: ${fmtCurrency(p.estSales)} · TT: ${fmtCurrency(p.actualSales)}</div>
+    </div></div>`;
+  });
+  html += '<div class="spacer"></div>';
+  el.innerHTML = html;
+}
+
+// AI ANALYSIS TAB
+const AI_OPTIONS = [
+  { key:'evaluate',  icon:'🔍', title:'Đánh giá hiệu quả',   titleEn:'Effectiveness',  desc:'Phân tích buổi tốt/kém', descEn:'Analyze best/worst events' },
+  { key:'trend',     icon:'📈', title:'Xu hướng',            titleEn:'Trend Analysis',  desc:'So sánh tháng, tìm pattern', descEn:'Month comparison & patterns' },
+  { key:'location',  icon:'🏪', title:'Điểm bán',            titleEn:'Top Locations',   desc:'Nơi nào nên tăng tần suất', descEn:'Where to increase frequency' },
+  { key:'sku',       icon:'🛒', title:'SKU phù hợp',         titleEn:'SKU Strategy',    desc:'SKU nào sampling hiệu quả', descEn:'Which SKUs perform best' },
+  { key:'budget',    icon:'💰', title:'Tối ưu ngân sách',    titleEn:'Budget Optimize', desc:'Phân bổ chi phí hợp lý', descEn:'Cost allocation analysis' },
+  { key:'summary',   icon:'📋', title:'Tóm tắt báo cáo',    titleEn:'Report Summary',  desc:'Tóm tắt nhanh cho BOD', descEn:'Quick summary for management' },
+  { key:'anomaly',   icon:'⚠️', title:'Phát hiện bất thường',titleEn:'Anomaly Detection',desc:'Dữ liệu bất thường', descEn:'Detect unusual patterns' },
+  { key:'improve',   icon:'💡', title:'Cải thiện',           titleEn:'Improvements',    desc:'Gợi ý cải thiện', descEn:'Improvement suggestions' },
+];
+
+let selectedAiOption = null;
+
+function renderDashAi(el, month, channel) {
+  const lv = currentLang === 'vi';
+  let html = `<div style="padding:12px 16px 4px;font-size:13px;color:var(--gray2);">
+    Chọn loại phân tích, AI sẽ đọc dữ liệu và đưa ra đánh giá chuyên sâu.
+  </div>
+  <div class="ai-option-grid">`;
+  AI_OPTIONS.forEach(opt => {
+    const sel = selectedAiOption === opt.key;
+    html += `<div class="ai-option ${sel?'selected':''}" onclick="selectAiOption('${opt.key}','${month}','${channel}')">
+      <div class="ai-option-icon">${opt.icon}</div>
+      <div class="ai-option-title">${lv?opt.title:opt.titleEn}</div>
+      <div class="ai-option-desc">${lv?opt.desc:opt.descEn}</div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  if (selectedAiOption) {
+    html += `<div class="ai-result-box" id="ai-result">
+      <div class="ai-loading"><div class="ai-loader"></div><div>${lv?'Đang phân tích dữ liệu...':'Analyzing data...'}</div></div>
+    </div>`;
+  }
+  html += '<div class="spacer"></div>';
+  el.innerHTML = html;
+
+  if (selectedAiOption) {
+    runAiAnalysis(selectedAiOption, month, channel);
+  }
+}
+
+async function selectAiOption(key, month, channel) {
+  selectedAiOption = key;
+  renderDashAi(document.getElementById('dash-content'), month, channel);
+}
+
+async function runAiAnalysis(type, month, channel) {
+  const resultEl = document.getElementById('ai-result');
+  if (!resultEl) return;
+
+  try {
+    // Get data from backend
+    const dataRes = await api('GET', { action:'getDashboardAiData', month, channel, type });
+    if (!dataRes.success) { resultEl.innerHTML = '⚠️ Không lấy được dữ liệu.'; return; }
+
+    const d = dataRes.data;
+    const lv = currentLang === 'vi';
+
+    // Build AI prompt
+    const opt = AI_OPTIONS.find(o => o.key === type);
+    const promptMap = {
+      evaluate: `Phân tích hiệu quả các buổi sampling Ayam Brand. Dữ liệu: ${JSON.stringify(d.summary)}. Chi tiết từng buổi: ${JSON.stringify(d.events.slice(0,20))}. Hãy: 1) Xác định buổi hiệu quả nhất và kém nhất, 2) Phân tích nguyên nhân, 3) Đề xuất cải thiện. Trả lời bằng tiếng ${lv?'Việt':'Anh'}, ngắn gọn, có dấu đầu dòng.`,
+      trend:    `Phân tích xu hướng sampling Ayam Brand theo tháng. Dữ liệu trend: ${JSON.stringify(d.monthlyTrend)}. Tổng hợp: ${JSON.stringify(d.summary)}. Hãy: 1) Nhận xét xu hướng, 2) Tìm pattern, 3) Dự báo. Bằng tiếng ${lv?'Việt':'Anh'}.`,
+      location: `Đánh giá điểm bán sampling Ayam Brand. Dữ liệu: ${JSON.stringify(d.events.slice(0,20))}. Hãy: 1) Top điểm bán hiệu quả, 2) Điểm nên tăng tần suất, 3) Điểm nên cân nhắc lại. Bằng tiếng ${lv?'Việt':'Anh'}.`,
+      sku:      `Phân tích SKU sampling Ayam Brand (${lv?'VN':'EN'}). Data: ${JSON.stringify(d.events.slice(0,20))}. Cho biết: 1) SKU được sampling nhiều nhất, 2) SKU hiệu quả theo kênh MT/GT, 3) Gợi ý SKU nên focus.`,
+      budget:   `Phân tích chi phí sampling Ayam Brand. Tổng chi phí: ${fmtCurrency(d.summary.totalCost)} cho ${d.summary.totalEvents} buổi. Bằng tiếng ${lv?'Việt':'Anh'}: 1) Chi phí/người thử có hợp lý không, 2) Đề xuất tối ưu ngân sách, 3) So sánh hiệu quả theo kênh.`,
+      summary:  `Tạo tóm tắt báo cáo sampling Ayam Brand bằng tiếng ${lv?'Việt':'Anh'} cho Ban Giám Đốc. Kỳ: ${month||'tất cả'}. ${JSON.stringify(d.summary)}. Trend: ${JSON.stringify(d.monthlyTrend)}. Gồm: 1) Tổng quan, 2) Kết quả nổi bật, 3) Điểm cần cải thiện, 4) Đề xuất tháng tới. Formal, chuyên nghiệp.`,
+      anomaly:  `Phát hiện bất thường trong dữ liệu sampling Ayam Brand bằng tiếng ${lv?'Việt':'Anh'}. Data: ${JSON.stringify(d.events.slice(0,20))}. Tìm: 1) Mẫu sử dụng bất thường, 2) Doanh số quá thấp so kỳ vọng, 3) Chi phí bất thường, 4) Pattern đáng ngờ.`,
+      improve:  `Đề xuất cải thiện hoạt động sampling Ayam Brand bằng tiếng ${lv?'Việt':'Anh'}. ${JSON.stringify(d.summary)}. Dựa trên: hiệu quả hiện tại, chi phí, feedback. Đưa ra: 1) 3 cải thiện ngắn hạn (tháng tới), 2) 3 cải thiện trung hạn (quý tới), 3) KPI đề xuất.`,
+    };
+
+    // Call Claude API
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: promptMap[type] || promptMap.summary }],
+      }),
+    });
+    const aiData = await aiRes.json();
+    const text = aiData.content?.[0]?.text || 'Không có kết quả từ AI.';
+    resultEl.innerHTML = `<div style="white-space:pre-wrap;font-size:14px;line-height:1.75;">${text}</div>
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--gray3);font-size:11px;color:var(--gray2);">
+        🤖 Phân tích bởi Claude AI · Dữ liệu: ${d.summary.totalEvents} buổi · Kỳ: ${month || 'tất cả'}
+      </div>`;
+  } catch(err) {
+    resultEl.innerHTML = `<div style="color:var(--red);">⚠️ Lỗi AI: ${err.message}</div>`;
+  }
+}
+
+// =====================================================
+// MODAL
+// =====================================================
+function showModal(title, bodyHtml, actions=[]) {
+  const overlay = document.getElementById('modal-overlay');
+  const content = document.getElementById('modal-content');
+  const actHtml = actions.map(a => `<button class="btn ${a.cls}" onclick="${a.action}">${a.label}</button>`).join('');
+  content.innerHTML = `
+    <div class="modal-handle"></div>
+    <div class="modal-title">${title}</div>
+    ${bodyHtml}
+    ${actHtml ? `<div class="modal-footer">${actHtml}</div>` : ''}
+  `;
+  overlay.classList.add('show');
+  overlay.onclick = e => { if (e.target === overlay) closeModal(); };
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+
+// =====================================================
+// INIT
+// =====================================================
+(function init() {
+  // Check session
+  const saved = sessionStorage.getItem('dgm_user');
+  if (saved) {
+    try {
+      currentUser = JSON.parse(saved);
+      loadMasterData().then(() => { setupHome(); showScreen('home'); });
+    } catch(e) { sessionStorage.removeItem('dgm_user'); }
+  }
+  // Set today's date min for date inputs
+  const today = new Date().toISOString().split('T')[0];
+  document.querySelectorAll('input[type=date]').forEach(el => el.min = today);
+})();
+</script>
+</body>
+</html>
+HTMLEOF
