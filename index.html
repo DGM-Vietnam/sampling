@@ -1369,7 +1369,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxYlCAAZ70Ipw0B2hCBmut_MfwRRV1KPtfTLpI2J1P6fVePUVfq7mqSuSVXjLxQO5kDKQ/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const MAX_IMAGES = 40;
 const TARGET_IMG_KB = 400; // compress to ~400KB each
 
@@ -1502,17 +1502,35 @@ function populateMonthFilters() {
 }
 
 // API call helper
+/**
+ * API caller — handles Google Apps Script CORS restrictions.
+ * GAS: GET requests work fine with CORS.
+ *      POST via fetch with JSON body is blocked by browser CORS preflight.
+ * Solution: Route ALL calls (GET + POST) as GET requests with params in URL.
+ * POST data is encoded as "payload" URL param (stringified JSON).
+ * GAS doGet() reads e.parameter.payload and dispatches accordingly.
+ */
 async function api(method, params) {
+  let urlParams;
   if (method === 'GET') {
-    const qs = new URLSearchParams(params).toString();
-    const res = await fetch(`${SCRIPT_URL}?${qs}`);
-    return res.json();
+    urlParams = new URLSearchParams(params);
   } else {
-    const res = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify(params),
+    // Encode POST body as GET param "payload"
+    urlParams = new URLSearchParams({ payload: JSON.stringify(params) });
+  }
+
+  const url = `${SCRIPT_URL}?${urlParams.toString()}`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
     });
-    return res.json();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('API error:', err, url.substring(0, 100));
+    throw err;
   }
 }
 
