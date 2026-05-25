@@ -1515,21 +1515,26 @@ async function api(method, params) {
   if (method === 'GET') {
     urlParams = new URLSearchParams(params);
   } else {
-    // Encode POST body as GET param "payload"
+    // Encode POST-like actions as GET with payload param (GAS CORS workaround)
     urlParams = new URLSearchParams({ payload: JSON.stringify(params) });
   }
 
   const url = `${SCRIPT_URL}?${urlParams.toString()}`;
+  console.log('[API]', method, params.action || params, url.substring(0, 120));
 
   try {
     const res = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
+      cache: 'no-cache',
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    console.log('[API] response status:', res.status, res.type);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    const data = await res.json();
+    console.log('[API] response data:', data);
+    return data;
   } catch (err) {
-    console.error('API error:', err, url.substring(0, 100));
+    console.error('[API] error:', err.message, 'URL:', url.substring(0, 150));
     throw err;
   }
 }
@@ -1575,7 +1580,8 @@ async function doLogin() {
       errEl.style.display = 'block';
     }
   } catch(e) {
-    errEl.textContent = 'Lỗi kết nối. Kiểm tra internet và thử lại.';
+    console.error('Login error:', e);
+    errEl.textContent = 'Lỗi kết nối: ' + (e.message || 'Kiểm tra internet và thử lại.');
     errEl.style.display = 'block';
   } finally { loading(false); }
 }
@@ -1600,7 +1606,7 @@ async function loadMasterData() {
   if (p.success)  masterData.products  = p.data;
   if (l.success)  masterData.locations = l.data;
   if (pg.success) masterData.pgPricing = pg.data;
-  Logger.log && Logger.log(`MasterData: ${masterData.products.length} products, ${masterData.locations.length} locations, ${masterData.pgPricing.length} PG rates`);
+  console.log('MasterData:', masterData.products.length, 'products,', masterData.locations.length, 'locations,', masterData.pgPricing.length, 'PG rates');
 }
 
 // =====================================================
