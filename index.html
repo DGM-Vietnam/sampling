@@ -71,14 +71,14 @@ body {
    DESKTOP LAYOUT — full PC optimization
 ===================================================== */
 @media (min-width: 768px) {
-  body {
+  /* Only apply desktop layout for manager/marketing via body class */
+  body.desktop-mode {
     background: var(--gray4);
     display: block;
     overflow: hidden;
   }
 
-  /* Full-screen app on desktop */
-  #app {
+  body.desktop-mode #app {
     max-width: 100%;
     width: 100%;
     height: 100dvh;
@@ -94,8 +94,7 @@ body {
     overflow: hidden;
   }
 
-  /* Sidebar nav replaces bottom nav & back buttons */
-  #desktop-sidebar {
+  body.desktop-mode #desktop-sidebar {
     display: flex !important;
     grid-area: sidebar;
     flex-direction: column;
@@ -106,72 +105,101 @@ body {
     z-index: 200;
   }
 
-  .sidebar-logo {
-    padding: 18px 20px 14px;
+  body.desktop-mode .sidebar-logo {
+    padding: 20px 20px 16px;
     border-bottom: 1px solid rgba(255,255,255,0.1);
     display: flex; align-items: center; gap: 12px;
+    cursor: pointer;
   }
-  .sidebar-logo img { width: 38px; height: 38px; border-radius: 50%; background: #fff; padding: 2px; cursor: pointer; }
-  .sidebar-logo-text { font-size: 13px; font-weight: 700; color: #fff; line-height: 1.3; }
-  .sidebar-logo-sub  { font-size: 11px; opacity: 0.6; font-weight: 400; }
-
-  .sidebar-user {
-    padding: 14px 20px;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+  body.desktop-mode .sidebar-logo img {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: #fff; padding: 3px; flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
-  .sidebar-user-name { font-size: 14px; font-weight: 700; color: #fff; }
-  .sidebar-user-role { font-size: 11px; opacity: 0.65; margin-top: 2px; }
+  body.desktop-mode .sidebar-logo-text { font-size: 14px; font-weight: 800; color: var(--yellow); line-height: 1.2; }
+  body.desktop-mode .sidebar-logo-sub  { font-size: 11px; color: rgba(255,255,255,0.55); font-weight: 400; margin-top: 2px; }
 
-  .sidebar-nav { padding: 12px 0; flex: 1; }
-  .sidebar-nav-item {
+  body.desktop-mode .sidebar-user {
+    padding: 14px 20px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+  }
+  body.desktop-mode .sidebar-user-name { font-size: 14px; font-weight: 700; color: #fff; }
+  body.desktop-mode .sidebar-user-role {
+    font-size: 11px; color: rgba(255,255,255,0.5);
+    margin-top: 3px; display: flex; align-items: center; gap: 4px;
+  }
+
+  body.desktop-mode .sidebar-nav { padding: 8px 0; flex: 1; overflow-y: auto; }
+  body.desktop-mode .sidebar-nav-item {
     display: flex; align-items: center; gap: 12px;
-    padding: 11px 20px;
+    padding: 10px 20px;
     font-size: 13px; font-weight: 500;
-    color: rgba(255,255,255,0.7);
+    color: rgba(255,255,255,0.65);
     cursor: pointer;
     transition: all 0.15s;
     border-left: 3px solid transparent;
-    position: relative;
+    -webkit-tap-highlight-color: transparent;
   }
-  .sidebar-nav-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
-  .sidebar-nav-item.active { background: rgba(255,255,255,0.12); color: #fff; border-left-color: var(--yellow); }
-  .sidebar-nav-item .nav-item-icon { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
-  .sidebar-nav-item .nav-item-badge {
+  body.desktop-mode .sidebar-nav-item:hover {
+    background: rgba(255,255,255,0.08); color: #fff;
+    border-left-color: rgba(255,225,64,0.4);
+  }
+  body.desktop-mode .sidebar-nav-item.active {
+    background: rgba(255,225,64,0.12); color: var(--yellow);
+    border-left-color: var(--yellow); font-weight: 700;
+  }
+  body.desktop-mode .sidebar-nav-item .nav-item-icon {
+    font-size: 17px; width: 22px; text-align: center; flex-shrink: 0;
+  }
+  body.desktop-mode .sidebar-nav-item .nav-item-badge {
     margin-left: auto; background: var(--red); color: #fff;
     border-radius: 10px; min-width: 18px; height: 18px;
     font-size: 10px; font-weight: 700; padding: 0 5px;
     display: flex; align-items: center; justify-content: center;
+    animation: pulse 2s infinite;
   }
 
-  .sidebar-bottom {
-    padding: 14px 20px;
-    border-top: 1px solid rgba(255,255,255,0.1);
+  body.desktop-mode .sidebar-bottom {
+    padding: 12px 20px 16px;
+    border-top: 1px solid rgba(255,255,255,0.08);
   }
-  .sidebar-logout {
+  body.desktop-mode .sidebar-logout {
     display: flex; align-items: center; gap: 10px;
-    font-size: 13px; color: rgba(255,255,255,0.55);
-    cursor: pointer; padding: 8px 0;
+    font-size: 12px; color: rgba(255,255,255,0.4);
+    cursor: pointer; padding: 8px 0; border-radius: 6px;
+    transition: color 0.15s;
   }
-  .sidebar-logout:hover { color: #fff; }
+  body.desktop-mode .sidebar-logout:hover { color: rgba(255,255,255,0.8); }
 
-  /* Header — grid area: header, right column only */
-  .header {
+  body.desktop-mode .header {
     grid-area: header;
     border-bottom: 1px solid rgba(255,255,255,0.15);
+    box-shadow: none;
   }
-  /* Hide mobile back buttons on desktop */
-  .header-back { display: none !important; }
+  /* Desktop: screens positioned in grid main area */
+  body.desktop-mode .screen {
+    grid-area: main;
+    position: absolute;
+    top: var(--nav-h);
+    left: 240px;
+    right: 0;
+    bottom: 0;
+  }
+  /* Form/content max-width for readability on wide screens */
+  body.desktop-mode .screen-content > * { max-width: 960px; }
+  body.desktop-mode #dash-content > div { max-width: 100%; }
+  body.desktop-mode .mgr-tabs { max-width: 100%; }
+  body.desktop-mode .header-back { display: none !important; }
 
-  /* Main content area */
-  #main-content-desktop {
+  body.desktop-mode #main-content-desktop {
     grid-area: main;
     overflow: hidden;
     display: flex;
     flex-direction: column;
   }
 
-  /* All screens sit in main content area */
-  .screen {
+  body.desktop-mode .screen {
     grid-area: main;
     position: absolute;
     top: var(--nav-h);
@@ -180,84 +208,74 @@ body {
     bottom: 0;
     flex-direction: column;
   }
-  .screen.active { display: flex; }
+  body.desktop-mode .screen.active { display: flex; }
 
-  /* Override mobile-specific constraints */
-  #app { max-width: 100%; }
-  .screen-content { padding-bottom: 16px !important; }
-  .bottom-nav { display: none !important; }
-  .sticky-submit { position: sticky; bottom: 0; }
+  body.desktop-mode #app { max-width: 100%; }
+  body.desktop-mode .screen-content { padding-bottom: 16px !important; }
+  body.desktop-mode .bottom-nav { display: none !important; }
+  body.desktop-mode .sticky-submit { position: sticky; bottom: 0; }
 
-  /* Dashboard desktop — wider content */
-  #screen-dashboard {
+  body.desktop-mode #screen-dashboard {
     left: 240px;
   }
 
-  /* Form sections wider */
-  .form-section { margin: 0 24px 14px; }
-  .card, .plan-card, .approval-card { margin-left: 24px; margin-right: 24px; }
-  .home-stats-row { padding: 0 24px; }
-  .menu-grid { padding: 0 24px; grid-template-columns: repeat(4, 1fr); }
-  .section-title { padding: 20px 24px 10px; }
-  .kpi-row { padding: 14px 24px 0; grid-template-columns: repeat(4, 1fr); }
-  .dash-kpi-grid { padding: 12px 24px 4px; grid-template-columns: repeat(4, 1fr); }
-  .filter-row { padding: 12px 24px 0; }
-  .pipeline { padding: 12px 24px; }
-  .rank-list { padding: 0 24px 8px; }
-  .compare-grid { padding: 10px 24px; }
-  .insight-card { margin: 0 24px 10px; }
-  .cost-summary { margin: 0 24px 12px; }
-  .info-banner { margin: 0 24px 12px; }
+  body.desktop-mode .form-section { margin: 0 24px 14px; }
+  body.desktop-mode .card, body.desktop-mode .plan-card, body.desktop-mode .approval-card { margin-left: 24px; margin-right: 24px; }
+  body.desktop-mode .home-stats-row { padding: 0 24px; }
+  body.desktop-mode .menu-grid { padding: 0 24px; grid-template-columns: repeat(4, 1fr); }
+  body.desktop-mode .section-title { padding: 20px 24px 10px; }
+  body.desktop-mode .kpi-row { padding: 14px 24px 0; grid-template-columns: repeat(4, 1fr); }
+  body.desktop-mode .dash-kpi-grid { padding: 12px 24px 4px; grid-template-columns: repeat(4, 1fr); }
+  body.desktop-mode .filter-row { padding: 12px 24px 0; }
+  body.desktop-mode .pipeline { padding: 12px 24px; }
+  body.desktop-mode .rank-list { padding: 0 24px 8px; }
+  body.desktop-mode .compare-grid { padding: 10px 24px; }
+  body.desktop-mode .insight-card { margin: 0 24px 10px; }
+  body.desktop-mode .cost-summary { margin: 0 24px 12px; }
+  body.desktop-mode .info-banner { margin: 0 24px 12px; }
 
-  /* Manager dashboard takes full width */
-  #screen-dashboard .screen-content { overflow-y: auto; }
+  body.desktop-mode #screen-dashboard .screen-content { overflow-y: auto; }
 
   /* Approval cards 2-col grid on desktop */
   #dash-content > div[style*="padding:12px 16px"] ~ .approval-card,
   .approval-card { max-width: 100%; }
 
   /* 2-col approval layout via grid wrapper */
-  .approval-list-desktop {
+  body.desktop-mode .approval-list-desktop {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0 12px;
     padding: 0 24px;
   }
-  .approval-list-desktop .approval-card { margin-left: 0; margin-right: 0; margin-bottom: 10px; }
+  body.desktop-mode .approval-list-desktop .approval-card { margin-left: 0; margin-right: 0; margin-bottom: 10px; }
 
   /* Dashboard filter row on desktop */
-  #screen-dashboard .filter-row { padding: 12px 24px 0; }
-  #screen-dashboard .dash-tabs  { padding: 0 24px; }
+  body.desktop-mode #screen-dashboard .filter-row { padding: 12px 24px 0; }
+  body.desktop-mode #screen-dashboard .dash-tabs  { padding: 0 24px; }
 
-  /* Make dashboard content scrollable with sidebar */
-  #screen-dashboard { display: flex; flex-direction: column; }
-  #dash-content { flex: 1; overflow-y: auto; }
+  body.desktop-mode #screen-dashboard { display: flex; flex-direction: column; }
+  body.desktop-mode #dash-content { flex: 1; overflow-y: auto; }
 
-  /* Mgr dashboard inner scroll */
-  #mgr-scroll { height: 100%; overflow-y: auto; }
-  #mgr-content { padding-bottom: 24px; }
-  .mgr-tabs { padding: 0 24px; }
-  .mgr-tab { padding: 12px 20px; font-size: 13px; }
+  body.desktop-mode #mgr-scroll { height: 100%; overflow-y: auto; }
+  body.desktop-mode #mgr-content { padding-bottom: 24px; }
+  body.desktop-mode .mgr-tabs { padding: 0 24px; }
+  body.desktop-mode .mgr-tab { padding: 12px 20px; font-size: 13px; }
 
-  /* Desktop grid for plan list — 2 columns */
-  #plans-list {
+  body.desktop-mode #plans-list {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0 8px;
     padding: 0 24px;
   }
-  #plans-list .plan-card { margin-left: 0; margin-right: 0; }
+  body.desktop-mode #plans-list .plan-card { margin-left: 0; margin-right: 0; }
 
-  /* Home hero wider */
-  .home-hero { padding: 24px 28px 32px; }
-  .home-name  { font-size: 26px; }
+  body.desktop-mode .home-hero { padding: 24px 28px 32px; }
+  body.desktop-mode .home-name  { font-size: 26px; }
 
-  /* Plan detail wider reading */
-  #plan-detail-content .detail-section { margin: 0 24px; }
-  #plan-detail-content .card { margin-left: 24px; margin-right: 24px; }
+  body.desktop-mode #plan-detail-content .detail-section { margin: 0 24px; }
+  body.desktop-mode #plan-detail-content .card { margin-left: 24px; margin-right: 24px; }
 
-  /* Approval cards 2-col on desktop */
-  #dash-content { padding: 0; }
+  body.desktop-mode #dash-content { padding: 0; }
 }
 
 /* Tablet — 520px to 767px: centered card */
@@ -1277,7 +1295,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
       <button class="header-back" onclick="showScreen('plans')">←</button>
       <div>
         <div class="header-title">Báo cáo hoạt động</div>
-        <div class="header-subtitle" id="report-plan-id"></div>
+        <div class="header-subtitle" id="report-plan-id" style="opacity:0.8;"></div>
       </div>
     </div>
     <div class="screen-content no-bottom-nav" style="padding-bottom:90px;" id="report-content">
@@ -1411,25 +1429,35 @@ function fmtCurrency(n) {
 }
 function fmtDate(d) {
   if (!d) return '—';
+  const s = String(d);
+  // Already DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s.substring(0,10);
+  // YYYY-MM-DD — most common from GAS
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const parts = s.substring(0,10).split('-');
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  // Date object / other
   const dd = new Date(d);
-  if (isNaN(dd)) return String(d).substring(0,10).split('-').reverse().join('/');
+  if (isNaN(dd)) return s.substring(0,10);
   const gmt7 = new Date(dd.getTime() + (7*60*60*1000));
-  const day = String(gmt7.getUTCDate()).padStart(2,'0');
-  const mon = String(gmt7.getUTCMonth()+1).padStart(2,'0');
-  const yr  = gmt7.getUTCFullYear();
-  return `${day}/${mon}/${yr}`;
+  return String(gmt7.getUTCDate()).padStart(2,'0') + '/'
+       + String(gmt7.getUTCMonth()+1).padStart(2,'0') + '/'
+       + gmt7.getUTCFullYear();
 }
 function fmtDateTime(d) {
   if (!d) return '—';
+  const s = String(d);
+  // GAS format: "24/05/2026 10:05:43"
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s.substring(0,16);
   const dd = new Date(d);
-  if (isNaN(dd)) return String(d);
-  const gmt7 = new Date(dd.getTime() + (7*60*60*1000));
-  const day = String(gmt7.getUTCDate()).padStart(2,'0');
-  const mon = String(gmt7.getUTCMonth()+1).padStart(2,'0');
-  const yr  = gmt7.getUTCFullYear();
-  const hh  = String(gmt7.getUTCHours()).padStart(2,'0');
-  const mm  = String(gmt7.getUTCMinutes()).padStart(2,'0');
-  return `${day}/${mon}/${yr} ${hh}:${mm}`;
+  if (isNaN(dd)) return s;
+  const g = new Date(dd.getTime() + (7*60*60*1000));
+  return String(g.getUTCDate()).padStart(2,'0') + '/'
+       + String(g.getUTCMonth()+1).padStart(2,'0') + '/'
+       + g.getUTCFullYear() + ' '
+       + String(g.getUTCHours()).padStart(2,'0') + ':'
+       + String(g.getUTCMinutes()).padStart(2,'0');
 }
 function fmtPercent(num, den) {
   if (!den || den === 0) return '—';
@@ -1547,19 +1575,24 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 // =====================================================
 async function loadMasterData() {
   const [p, l, pg] = await Promise.all([
-    api('GET', {action:'getProducts'}),
-    api('GET', {action:'getLocations'}),
-    api('GET', {action:'getPgPricing'}),
+    api('GET', { action:'getProducts' }),
+    api('GET', { action:'getLocations', channel: '' }), // load all; filtered at render time
+    api('GET', { action:'getPgPricing' }),
   ]);
-  if (p.success) masterData.products = p.data;
-  if (l.success) masterData.locations = l.data;
+  if (p.success)  masterData.products  = p.data;
+  if (l.success)  masterData.locations = l.data;
   if (pg.success) masterData.pgPricing = pg.data;
+  Logger.log && Logger.log(`MasterData: ${masterData.products.length} products, ${masterData.locations.length} locations, ${masterData.pgPricing.length} PG rates`);
 }
 
 // =====================================================
 // HOME SCREEN
 // =====================================================
-function isDesktop() { return window.innerWidth >= 768; }
+function isDesktop() {
+  if (!currentUser) return false;
+  const desktopRoles = ['Sales Manager', 'Marketing'];
+  return desktopRoles.includes(currentUser.role) && window.innerWidth >= 768;
+}
 
 function buildSidebarNav() {
   const u = currentUser;
@@ -1569,8 +1602,11 @@ function buildSidebarNav() {
   const isRep       = u.role === 'Sales Representative';
   const sidebar = document.getElementById('desktop-sidebar');
   if (!sidebar) return;
-  // Show sidebar on desktop
-  sidebar.style.display = isDesktop() ? 'flex' : 'none';
+
+  // Apply desktop-mode class ONLY for Manager/Marketing on large screens
+  const wantsDesktop = (isManager || isMarketing) && window.innerWidth >= 768;
+  document.body.classList.toggle('desktop-mode', wantsDesktop);
+  sidebar.style.display = wantsDesktop ? 'flex' : 'none';
 
   // User info
   const nameEl = document.getElementById('sidebar-name');
@@ -1639,8 +1675,13 @@ function updateSidebarActive() {
 
 // Rebuild sidebar on resize
 window.addEventListener('resize', () => {
+  if (!currentUser) return;
+  const isManager   = currentUser.role === 'Sales Manager';
+  const isMarketing = currentUser.role === 'Marketing';
+  const wantsDesktop = (isManager || isMarketing) && window.innerWidth >= 768;
+  document.body.classList.toggle('desktop-mode', wantsDesktop);
   const sidebar = document.getElementById('desktop-sidebar');
-  if (sidebar && currentUser) sidebar.style.display = isDesktop() ? 'flex' : 'none';
+  if (sidebar) sidebar.style.display = wantsDesktop ? 'flex' : 'none';
   updateSidebarActive();
 });
 
@@ -1767,6 +1808,9 @@ async function loadMyPlans() {
       return;
     }
     plans.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // Cache all plans for location name lookup
+    if (!window._planCache) window._planCache = {};
+    plans.forEach(p => { window._planCache[p.id] = p; });
     listEl.innerHTML = plans.map(p => planCard(p)).join('');
   } catch(e) {
     listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối</div></div>';
@@ -1803,6 +1847,9 @@ async function viewPlanDetail(planId) {
     const res = await api('GET', { action:'getPlanDetail', planId });
     if (!res.success) { showToast(res.error, 'error'); return; }
     const p = res.data;
+    // Cache for other screens to use location name
+    if (!window._planCache) window._planCache = {};
+    window._planCache[planId] = p;
     renderPlanDetail(p);
     showScreen('plan-detail');
   } catch(e) { showToast('Lỗi kết nối', 'error'); }
@@ -1811,7 +1858,7 @@ async function viewPlanDetail(planId) {
 
 function renderPlanDetail(p) {
   document.getElementById('plan-detail-title').textContent = p.locationName;
-  document.getElementById('plan-detail-id').textContent = p.id + ' · ' + fmtDate(p.date);
+  document.getElementById('plan-detail-id').textContent = fmtDate(p.date) + ' · ' + p.id;
 
   const back = document.getElementById('plan-detail-back');
   back.onclick = () => showScreen('plans');
@@ -1911,8 +1958,19 @@ function renderPlanDetail(p) {
   if (canEdit || canReport) {
     html += `<div style="display:flex;gap:10px;padding:0 16px;">`;
     if (canEdit) html += `<button class="btn btn-outline" style="flex:1;" onclick="initCreatePlan('${p.id}')">✏️ Chỉnh sửa</button>`;
-    if (canReport) html += `<button class="btn btn-primary" style="flex:1;" onclick="initReport('${p.id}')"><span>${reportLabel}</span></button>`;
+    if (canReport) {
+      const btnStyle = p.status === 'hoan_thanh'
+        ? 'style="flex:1;background:var(--teal);"'
+        : 'style="flex:1;"';
+      html += `<button class="btn btn-primary" ${btnStyle} onclick="initReport('${p.id}')"><span>${reportLabel}</span></button>`;
+    }
     html += `</div>`;
+  }
+  // Extra info for completed with reports
+  if (p.status === 'hoan_thanh' && (!p.reports || p.reports.length === 0) && (isExecutor || isManager)) {
+    html += `<div class="info-banner" style="margin-top:8px;">
+      💡 Kế hoạch đã hoàn thành. Nhấn "📊 Thêm báo cáo" để bổ sung báo cáo cho buổi tiếp theo.
+    </div>`;
   }
   html += `<div class="spacer"></div>`;
   document.getElementById('plan-detail-content').innerHTML = html;
@@ -1945,17 +2003,65 @@ function calcHoursDiff(startTime, endTime) {
 }
 
 function isHoliday(dateStr) {
-  // Vietnamese public holidays (fixed dates) — extend as needed
+  // Vietnamese public holidays per Bộ Luật Lao Động
+  // Fixed solar holidays
   if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const mm = d.getMonth() + 1;
+  const d = new Date(dateStr + 'T00:00:00');
+  const mm = d.getMonth() + 1; // 1-12
   const dd = d.getDate();
-  const isSunday = d.getDay() === 0;
+  const yr = d.getFullYear();
+
+  // Fixed-date public holidays (Điều 112 BLLĐ 2019)
   const fixedHolidays = [
-    [1,1],[4,30],[5,1],[9,2] // New Year, Liberation, Labour, National Day
+    [1,  1],   // Tết Dương lịch
+    [4, 30],   // Ngày Giải phóng miền Nam
+    [5,  1],   // Ngày Quốc tế Lao động
+    [9,  2],   // Quốc khánh
+    [9,  3],   // Ngày nghỉ bù Quốc khánh (thường)
   ];
-  const isFixed = fixedHolidays.some(([m,dy]) => mm === m && dd === dy);
-  return isSunday || isFixed;
+  const isFixed = fixedHolidays.some(([m, dy]) => mm === m && dd === dy);
+  if (isFixed) return true;
+
+  // Giỗ Tổ Hùng Vương: 10/3 âm lịch — approximate solar dates by year
+  // Using known dates (update annually if needed)
+  const gioToMap = {
+    2024: '2024-04-18',
+    2025: '2025-04-07',
+    2026: '2026-03-28',
+    2027: '2027-04-16',
+  };
+  if (gioToMap[yr]) {
+    const gioTo = new Date(gioToMap[yr] + 'T00:00:00');
+    if (d.getTime() === gioTo.getTime()) return true;
+  }
+
+  // Tết Nguyên Đán: typically 5-7 days holiday (approximate by year)
+  // Days off: 29 tháng Chạp âm to Mùng 5 tháng Giêng âm
+  // Known solar date ranges for Tết holiday period:
+  const tetRanges = {
+    2024: ['2024-02-08', '2024-02-14'],
+    2025: ['2025-01-27', '2025-02-02'],
+    2026: ['2026-02-15', '2026-02-21'],
+    2027: ['2027-02-05', '2027-02-11'],
+  };
+  if (tetRanges[yr]) {
+    const [start, end] = tetRanges[yr].map(s => new Date(s + 'T00:00:00'));
+    if (d >= start && d <= end) return true;
+  }
+
+  return false;
+}
+
+function isSaturday(dateStr) {
+  if (!dateStr) return false;
+  return new Date(dateStr + 'T00:00:00').getDay() === 6;
+}
+
+function getDayType(dateStr, channel) {
+  // Returns: 'holiday' | 'normal'
+  // T7/CN = normal per DGM policy
+  if (isHoliday(dateStr)) return 'holiday';
+  return 'normal';
 }
 
 function isSaturday(dateStr) {
@@ -1963,36 +2069,94 @@ function isSaturday(dateStr) {
   return new Date(dateStr).getDay() === 6;
 }
 
-function getPgRate(hours, dateStr) {
-  // Find matching rate from masterData.pgPricing
-  // pgPricing rows: { hours, ratePerPg, note }
+function getPgRate(hours, dateStr, channel) {
+  /**
+   * Bảng giá DGM:
+   *   MT Thường:  45,000đ/giờ/PG
+   *   MT Lễ/Tết:  67,500đ/giờ/PG
+   *   GT Thường:  50,000đ/giờ/PG
+   *   GT Lễ/Tết:  75,000đ/giờ/PG
+   *   T7/CN = Ngày thường (không phụ phí)
+   *
+   * Công thức: Tiền PG = Số PG × Số giờ × Đơn giá/giờ
+   * Sheet columns: hours | ratePerPg | channel | note
+   *   note "Thường"          → ngày thường
+   *   note "Ngày lễ..."      → lễ/tết theo quy định
+   */
+
   const pricing = masterData.pgPricing;
-  if (!pricing || pricing.length === 0) return { rate: 0, note: '', label: 'Chưa có bảng giá' };
 
-  // Sort by hours ascending, find closest match >= actual hours
-  const sorted = [...pricing].sort((a,b) => Number(a.hours) - Number(b.hours));
-  let matched = sorted[sorted.length - 1]; // fallback = highest tier
-  for (const tier of sorted) {
-    if (Number(tier.hours) >= Math.ceil(hours)) { matched = tier; break; }
+  // Detect day type — T7/CN = thường per DGM policy
+  const isHol = isHoliday(dateStr); // only fixed public holidays
+  const dayType = isHol ? 'Lễ/Tết' : 'Ngày thường';
+
+  // Normalise channel input: "GT South"/"GT North"/"GT Central" → "GT"
+  const normCh = (s) => {
+    const u = (s || '').toUpperCase().trim();
+    if (u === 'MT') return 'MT';
+    if (u.startsWith('GT')) return 'GT';
+    return null;
+  };
+  const ch = normCh(channel);
+
+  // Hardcoded fallback rates (matches DGM bảng giá)
+  const FALLBACK = {
+    MT: { normal: 45000, holiday: 67500 },
+    GT: { normal: 50000, holiday: 75000 },
+  };
+
+  let hourlyRate = 0;
+  let rateSource = 'hardcoded';
+
+  if (pricing && pricing.length > 0) {
+    // Try sheet data first
+    const normNote = (n) => (n || '').toLowerCase();
+    const isHolRow = (row) => normNote(row.note).includes('lễ') ||
+                               normNote(row.note).includes('le ') ||
+                               normNote(row.note).includes('tết') ||
+                               normNote(row.note).includes('tet');
+
+    // Find best match: channel + day type
+    let match = pricing.find(row => {
+      const rowCh = normCh(row.channel || row.Channel || '');
+      const dayMatch = isHol ? isHolRow(row) : !isHolRow(row);
+      return rowCh === ch && dayMatch;
+    });
+
+    // Fallback 1: ignore channel, match day type only
+    if (!match) {
+      match = pricing.find(row => isHol ? isHolRow(row) : !isHolRow(row));
+    }
+    // Fallback 2: first row
+    if (!match) match = pricing[0];
+
+    if (match) {
+      hourlyRate = Number(String(match.ratePerPg || match['Đơn Giá / PG (VNĐ)'] || 0).replace(/[^0-9]/g, '')) || 0;
+      rateSource = 'sheet';
+    }
   }
 
-  let rate = Number(matched.ratePerPg) || 0;
-  let label = `${Math.ceil(hours)}h → bậc ${matched.hours}h`;
-  let note = matched.note || '';
-
-  // Holiday/Sunday surcharge — check note field for indicators
-  const isHol = isHoliday(dateStr);
-  const isSat = isSaturday(dateStr);
-  if (isHol && note.toLowerCase().includes('lễ')) {
-    // Apply holiday rate if noted in pricing table
-    // For now flag it for manager awareness
-    note = '⚠️ Ngày lễ/CN — kiểm tra đơn giá đặc biệt trong bảng giá';
-    label += ' (Lễ/CN)';
-  } else if (isSat) {
-    note = '📅 Thứ 7 — kiểm tra đơn giá nếu có phụ phí';
+  // If sheet gave 0 or no data, use hardcoded fallback
+  if (!hourlyRate) {
+    const fb = ch ? FALLBACK[ch] : FALLBACK.MT;
+    hourlyRate = isHol ? (fb?.holiday || 67500) : (fb?.normal || 45000);
+    rateSource = 'default';
   }
 
-  return { rate, label, note };
+  // Build display info
+  const chLabel   = ch ? `Kênh ${ch}` : '';
+  const dayLabel  = isHol ? '🎉 Lễ/Tết' : '📅 Ngày thường';
+  const warnNote  = rateSource === 'default' ? ' ⚠️ Dùng giá mặc định — kiểm tra sheet GIA_THUE_PG' : '';
+  const label     = `${hours.toFixed(1)}h × ${fmtCurrency(hourlyRate)}/giờ${ch ? ' · ' + ch : ''}`;
+
+  return {
+    hourlyRate,
+    label,
+    note:    `${dayLabel}${ch ? ' · ' + chLabel : ''}${warnNote}`,
+    dayType,
+    channel: ch,
+    rateSource,
+  };
 }
 
 function onSamplingTimeChange() {
@@ -2019,39 +2183,59 @@ function onPgTimeChange() {
   const pgEnd   = document.getElementById('f-pg-end')?.value;
   const dateStr = document.getElementById('f-date')?.value;
   const pgCount = parseInt(document.getElementById('f-pg-count')?.value) || 1;
+  const channel = document.getElementById('f-region')?.value || currentUser?.channel || '';
 
-  // Mark as manually changed so auto-sync won't override
   const pgStartEl = document.getElementById('f-pg-start');
   const pgEndEl   = document.getElementById('f-pg-end');
   if (pgStartEl) pgStartEl.dataset.manuallyChanged = '1';
   if (pgEndEl)   pgEndEl.dataset.manuallyChanged   = '1';
 
   const hours = calcHoursDiff(pgStart, pgEnd);
-  const { rate, label, note } = getPgRate(hours, dateStr);
-  const totalPgCost = pgCount * rate;
+  if (hours <= 0) {
+    const rateDisp = document.getElementById('pg-rate-display');
+    if (rateDisp) rateDisp.style.display = 'none';
+    planFormData._pgHours = 0; planFormData._pgRate = 0; planFormData._pgTotalCost = 0;
+    calcCost(); return;
+  }
 
-  // Update display
+  // hourly rate based on channel + date holiday check
+  const { hourlyRate, label, note, dayType, channel: ch, rateSource } = getPgRate(hours, dateStr, channel);
+
+  // Tiền PG = Số PG × Số giờ × Đơn giá/giờ
+  const totalPgCost = pgCount * hours * hourlyRate;
+
   const rateDisp = document.getElementById('pg-rate-display');
-  if (rateDisp) rateDisp.style.display = hours > 0 ? 'block' : 'none';
-  const rateLabel = document.getElementById('pg-rate-label');
-  const rateVal   = document.getElementById('pg-rate-value');
-  const hoursCalc = document.getElementById('pg-hours-calc');
-  const costCalc  = document.getElementById('pg-cost-calc');
-  const rateNote  = document.getElementById('pg-rate-note');
-  if (rateLabel) rateLabel.textContent = `Đơn giá (${label}):`;
-  if (rateVal)   rateVal.textContent   = fmtCurrency(rate) + '/PG';
-  if (hoursCalc) hoursCalc.textContent = `${hours.toFixed(1)}h × ${pgCount} PG`;
-  if (costCalc)  costCalc.textContent  = fmtCurrency(totalPgCost);
-  if (rateNote)  { rateNote.textContent = note; rateNote.style.display = note ? 'block' : 'none'; }
+  if (rateDisp) rateDisp.style.display = 'block';
 
-  // Store computed values
-  planFormData._pgHours = hours;
-  planFormData._pgRate  = rate;
-  planFormData._pgStart = pgStart;
-  planFormData._pgEnd   = pgEnd;
+  const el = (id) => document.getElementById(id);
+  if (el('pg-rate-label')) el('pg-rate-label').textContent =
+    `Đơn giá/giờ/PG (${dayType}${ch ? ' · ' + ch : ''}):`;
+  if (el('pg-rate-value')) el('pg-rate-value').textContent = fmtCurrency(hourlyRate) + '/giờ';
+  if (el('pg-hours-calc')) el('pg-hours-calc').textContent =
+    pgCount + ' PG × ' + hours.toFixed(1) + 'h × ' + fmtCurrency(hourlyRate) + '/giờ';
+  if (el('pg-cost-calc'))  el('pg-cost-calc').textContent  = fmtCurrency(totalPgCost);
+  if (el('pg-rate-note'))  {
+    el('pg-rate-note').textContent   = note;
+    el('pg-rate-note').style.display = note ? 'block' : 'none';
+  }
+
+  const dayBadge = el('pg-day-badge');
+  if (dayBadge) {
+    const colors = { 'Ngày thường': 'var(--teal)', 'Lễ/Tết': 'var(--red)' };
+    dayBadge.textContent      = dayType;
+    dayBadge.style.background = colors[dayType] || 'var(--gray2)';
+    dayBadge.style.display    = 'inline-flex';
+  }
+
+  planFormData._pgHours     = hours;
+  planFormData._pgRate      = hourlyRate;
+  planFormData._pgTotalCost = totalPgCost;
+  planFormData._pgStart     = pgStart;
+  planFormData._pgEnd       = pgEnd;
+  planFormData._pgChannel   = channel;
+  planFormData._pgDayType   = dayType;
   calcCost();
 }
-
 function toggleGiftRequest() {
   const tog = document.getElementById('toggle-gift');
   planFormData.hasGift = !planFormData.hasGift;
@@ -2063,13 +2247,21 @@ function toggleGiftRequest() {
 
 function renderCreatePlanForm() {
   const isMT = currentUser.channel === 'MT' || currentUser.channel === 'Manager';
+  // Filter locations: MT users see MT, GT users see their GT channel
+  const userCh = (currentUser.channel || '').toUpperCase();
   const locationOptions = masterData.locations
-    .filter(l => currentUser.channel === 'Manager' || l.channel === currentUser.channel || l.channel.includes(currentUser.region))
+    .filter(l => {
+      if (userCh === 'MANAGER' || currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing') return true;
+      const lCh = (l.channel || '').toUpperCase();
+      if (userCh === 'MT') return lCh === 'MT';
+      if (userCh === 'GT') return lCh.startsWith('GT'); // GT South, GT North, GT Central
+      return lCh.startsWith(userCh);
+    })
     .map(l => `<option value="${l.name}">${l.name}</option>`).join('');
 
-  const pgOptions = masterData.pgPricing.map(pg =>
-    `<option value="${pg.hours}">${pg.hours} giờ – ${fmtCurrency(pg.ratePerPg)}/PG</option>`
-  ).join('');
+  // PG dropdown removed — now uses start/end time inputs
+  // Rate calculated dynamically via onPgTimeChange()
+  const pgOptions = ''; // kept for compat
 
   const productList = masterData.products.map(p => `
     <div class="product-item" id="prod-${p.ma}">
@@ -2168,6 +2360,10 @@ function renderCreatePlanForm() {
             </div>
           </div>
           <div id="pg-rate-display" style="background:var(--cream);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--navy);display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span id="pg-day-badge" style="display:none;padding:2px 8px;border-radius:10px;color:#fff;font-size:10px;font-weight:700;"></span>
+              <span style="font-size:10px;color:var(--gray2);">Tự động theo ngày sampling</span>
+            </div>
             <div style="display:flex;justify-content:space-between;">
               <span id="pg-rate-label">Đơn giá:</span>
               <span id="pg-rate-value" style="font-weight:700;color:var(--red);"></span>
@@ -2345,7 +2541,9 @@ async function loadExecutorOptions() {
     // Executor chips
     const chipsEl = document.getElementById('executor-chips');
     if (chipsEl) {
-      chipsEl.innerHTML = users.map(u =>
+      // Only Salesman/Rep in executor chips
+      const execUsers = users.filter(u => u.role === 'Salesman' || u.role === 'Sales Representative');
+      chipsEl.innerHTML = execUsers.map(u =>
         `<div class="chip-option" data-code="${u.code}" onclick="toggleExecutor(this,'${u.code}')">
           ${u.name}${u.role === 'Sales Representative' ? ' <span style="font-size:10px;opacity:0.6;">(Rep)</span>' : ''}
         </div>`
@@ -2363,21 +2561,25 @@ async function loadExecutorOptions() {
       // Also include managers/marketing for supervisor role
       const allRes = await api('GET', { action:'getUsers', channel: '', region: '' });
       const allUsers = allRes.success ? allRes.data : users;
-      supEl.innerHTML = allUsers.map(u =>
-        `<div class="chip-option" data-code="${u.code}" onclick="selectSupervisor(this,'${u.code}','${u.name}')">
-          ${u.name}${u.role.includes('Manager') ? ' <span style="font-size:10px;opacity:0.6;">(Mgr)</span>' : ''}
+      // Supervisor = Rep, Manager, Marketing (not Salesman)
+      const supUsers = allUsers.filter(u =>
+        u.role === 'Sales Representative' || u.role === 'Sales Manager' || u.role === 'Marketing'
+      );
+      supEl.innerHTML = supUsers.map(u =>
+        `<div class="chip-option" data-code="${u.code}" onclick="selectSupervisor(this,'${u.code}','${encodeURIComponent(u.name)}')">
+          ${u.name}${u.role.includes('Manager') ? ' <span style="font-size:10px;opacity:0.6;">(Mgr)</span>' : u.role === 'Sales Representative' ? ' <span style="font-size:10px;opacity:0.6;">(Rep)</span>' : ''}
         </div>`
       ).join('');
     }
   } catch(e) { console.error('loadExecutorOptions error:', e); }
 }
 
-function selectSupervisor(el, code, name) {
-  // Single select — deselect others
+function selectSupervisor(el, code, encodedName) {
   document.querySelectorAll('#supervisor-chips .chip-option').forEach(c => c.classList.remove('selected'));
   el.classList.add('selected');
   planFormData.supervisorCode = code;
-  planFormData.supervisorName = name;
+  try { planFormData.supervisorName = decodeURIComponent(encodedName); }
+  catch(e) { planFormData.supervisorName = encodedName; }
 }
 
 function toggleExecutor(el, code) {
@@ -2466,10 +2668,8 @@ function updateLocationName(val) {
 }
 
 function calcCost() {
-  const pgCount = parseInt(document.getElementById('f-pg-count')?.value) || 0;
-  const pgHours = planFormData._pgHours || 0;
-  const pgRate  = planFormData._pgRate  || 0;
-  const pgCost  = planFormData.hiresPg ? pgCount * pgRate : 0;
+  // PG cost = Số PG × Số giờ × Đơn giá/giờ (pre-calculated in onPgTimeChange)
+  const pgCost  = planFormData.hiresPg ? (planFormData._pgTotalCost || 0) : 0;
   const locCost = parseFloat(document.getElementById('f-location-cost')?.value) || 0;
   const giftQty = planFormData.hasGift ? (parseInt(document.getElementById('f-gift-qty')?.value) || 0) : 0;
   const giftVal2= planFormData.hasGift ? (parseFloat(document.getElementById('f-gift-value')?.value) || 0) : 0;
@@ -2493,10 +2693,12 @@ async function submitPlan() {
     supervisorCode: planFormData.supervisorCode || '',
     hiresPg:       planFormData.hiresPg,
     pgCount:       parseInt(document.getElementById('f-pg-count')?.value) || 0,
-    pgHours:       planFormData._pgHours || 0,
-    pgStart:       planFormData._pgStart || '',
-    pgEnd:         planFormData._pgEnd   || '',
-    pgRate:        planFormData._pgRate  || 0,
+    pgHours:       planFormData._pgHours     || 0,
+    pgStart:       planFormData._pgStart     || '',
+    pgEnd:         planFormData._pgEnd       || '',
+    pgRate:        planFormData._pgRate      || 0,  // hourly rate
+    pgTotalCost:   planFormData._pgTotalCost || 0,  // Số PG × giờ × rate
+    pgDayType:     planFormData._pgDayType   || 'Ngày thường',
     pgNote:        document.getElementById('f-pg-note')?.value?.trim(),
     locationCost:  parseFloat(document.getElementById('f-location-cost')?.value) || 0,
     costType:      document.getElementById('f-cost-type')?.value,
@@ -2543,7 +2745,11 @@ async function submitPlan() {
 function initReport(planId) {
   currentPlanId = planId;
   reportFormData = { imgLocation:[], imgFood:[], imgOverview:[], imgOther:[], samplesUsed:[], markCompleted: false };
-  document.getElementById('report-plan-id').textContent = planId;
+  // Show location name in header — fetch from plans cache or show ID as fallback
+  const cachedPlan = window._planCache && window._planCache[planId];
+  const locLabel = cachedPlan ? cachedPlan.locationName : planId;
+  document.getElementById('report-plan-id').textContent = locLabel;
+  document.getElementById('report-plan-id').dataset.planId = planId;
   renderReportForm(planId);
   showScreen('report');
 }
@@ -3408,6 +3614,11 @@ async function loadDashboard() {
   }
 
   // Overview — role-filtered data
+  // AI tab only for manager (handled inside mgr tabs); block here for safety
+  if (currentDashTab === 'ai' && currentUser.role !== 'Sales Manager') {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-text">AI Analysis chỉ dành cho Sales Manager</div></div>';
+    return;
+  }
   if (currentDashTab === 'overview' || currentDashTab === 'performance' || currentDashTab === 'ai') {
     const userChannel = (isRep || isSalesman) ? (currentUser.channel || '') : channel;
     const userRegion  = (isRep || isSalesman) ? (currentUser.region  || '') : '';
