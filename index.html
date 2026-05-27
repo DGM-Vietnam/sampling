@@ -1695,33 +1695,58 @@ function buildSidebarNav() {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
 
-  const items = [
-    { icon: '🏠', label: 'Trang chủ',      action: () => showScreen('home'),                                          screen: 'home'      },
-  ];
-  if (isRep || isManager) {
-    items.push({ icon: '➕', label: 'Lên kế hoạch', action: () => initCreatePlan(), screen: 'create-plan' });
-  }
-  items.push({ icon: '📁', label: 'Kế hoạch', action: () => { showScreen('plans'); loadMyPlans(); }, screen: 'plans' });
-  if (!isManager && !isMarketing) {
-    items.push({ icon: '📅', label: 'Lịch sampling', action: () => { showScreen('calendar'); renderCalendar(); }, screen: 'calendar' });
-  }
+  // Manager/Marketing desktop sidebar — distinct nav items
+  const items = [];
   if (isManager || isMarketing) {
     items.push({
-      icon: '📊', label: 'Dashboard',
-      action: () => { showScreen('dashboard'); setupDashboardForRole(); loadDashboard(); },
-      screen: 'dashboard',
+      icon: '📊', label: 'Tổng quan',
+      action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='overview'; loadDashboard(); },
+      screen: 'dashboard', key: 'overview',
+    });
+    items.push({
+      icon: '➕', label: 'Lên kế hoạch',
+      action: () => { showScreen('create-plan'); initCreatePlan(); },
+      screen: 'create-plan',
+    });
+    items.push({
+      icon: '📁', label: 'Kế hoạch',
+      action: () => { showScreen('plans'); loadMyPlans(); },
+      screen: 'plans',
     });
     items.push({
       icon: '✅', label: 'Phê duyệt',
-      action: () => { showScreen('dashboard'); setupDashboardForRole(); showDashTab('approval'); loadDashboard(); },
-      screen: 'dashboard', sub: 'approval', badgeId: 'sidebar-approval-badge',
+      action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='approval_direct'; loadApprovalDirect(); },
+      screen: 'dashboard', key: 'approval', badgeId: 'sidebar-approval-badge',
+    });
+    items.push({
+      icon: '👥', label: 'Nhân sự',
+      action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='staff'; loadDashboard(); },
+      screen: 'dashboard', key: 'staff',
+    });
+    items.push({
+      icon: '💰', label: 'Chi phí',
+      action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='cost'; loadDashboard(); },
+      screen: 'dashboard', key: 'cost',
+    });
+    items.push({
+      icon: '📈', label: 'So sánh',
+      action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='compare'; loadDashboard(); },
+      screen: 'dashboard', key: 'compare',
+    });
+    items.push({
+      icon: '🤖', label: 'AI Analysis',
+      action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='ai'; loadDashboard(); },
+      screen: 'dashboard', key: 'ai',
     });
   } else {
-    items.push({
-      icon: '📊', label: 'Dashboard',
-      action: () => { showScreen('dashboard'); setupDashboardForRole(); loadDashboard(); },
-      screen: 'dashboard',
-    });
+    // Rep / Salesman
+    items.push({ icon: '🏠', label: 'Trang chủ', action: () => showScreen('home'), screen: 'home' });
+    if (isRep) {
+      items.push({ icon: '➕', label: 'Lên kế hoạch', action: () => initCreatePlan(), screen: 'create-plan' });
+    }
+    items.push({ icon: '📁', label: 'Kế hoạch', action: () => { showScreen('plans'); loadMyPlans(); }, screen: 'plans' });
+    items.push({ icon: '📅', label: 'Lịch sampling', action: () => { showScreen('calendar'); renderCalendar(); }, screen: 'calendar' });
+    items.push({ icon: '📊', label: 'Dashboard', action: () => { showScreen('dashboard'); setupDashboardForRole(); loadDashboard(); }, screen: 'dashboard' });
   }
 
   nav.innerHTML = items.map((item, i) => `
@@ -1746,7 +1771,14 @@ function updateSidebarActive() {
   const items = window._sidebarItems || [];
   const activeScreen = sessionStorage.getItem('dgm_screen') || 'home';
   document.querySelectorAll('.sidebar-nav-item').forEach((el, i) => {
-    el.classList.toggle('active', items[i] && items[i].screen === activeScreen);
+    const item = items[i];
+    if (!item) return;
+    // For dashboard items, also match by mgrTab key
+    if (item.screen === 'dashboard' && item.key) {
+      el.classList.toggle('active', activeScreen === 'dashboard' && mgrTab === item.key);
+    } else {
+      el.classList.toggle('active', item.screen === activeScreen);
+    }
   });
 }
 
@@ -1775,6 +1807,16 @@ function setupHome() {
     loadApprovalBadge();
     syncApprovalBadgeToSidebar();
   }, 1500);
+  // Manager on desktop → go straight to dashboard
+  const isManagerRole2 = currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing';
+  if (isManagerRole2 && isDesktop()) {
+    setTimeout(() => {
+      showScreen('dashboard');
+      setupDashboardForRole();
+      mgrTab = 'overview';
+      loadDashboard();
+    }, 100);
+  }
 }
 
 async function syncApprovalBadgeToSidebar() {
@@ -3100,25 +3142,52 @@ async function renderCalendar() {
 
   try {
     const res = await api('GET', { action:'getCalendar', userCode: currentUser.code, month: monthStr });
+    console.log('[Calendar] API response:', JSON.stringify(res).substring(0, 300));
     if (res.success && res.data) {
-      // Normalize keys: GAS may return 'DD/MM/YYYY' or 'YYYY-MM-DD'
-      // We need 'YYYY-MM-DD' to match renderCalendar key format
       calendarData = {};
+      const rawKeys = Object.keys(res.data);
+      console.log('[Calendar] Raw keys from API:', rawKeys.slice(0, 10));
+
       Object.entries(res.data).forEach(([key, plans]) => {
-        let normKey = key;
-        // Convert DD/MM/YYYY → YYYY-MM-DD
-        if (/^\d{2}\/\d{2}\/\d{4}/.test(key)) {
-          const [dd, mm, yyyy] = key.split('/');
-          normKey = `${yyyy}-${mm}-${dd}`;
+        let normKey = key.trim();
+        // Handle DD/MM/YYYY format
+        if (/^\d{2}\/\d{2}\/\d{4}/.test(normKey)) {
+          const parts = normKey.split('/');
+          normKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
         }
-        // Ensure YYYY-MM-DD format (trim time if present)
+        // Handle DD/MM/YYYY HH:mm format
+        else if (/^\d{2}\/\d{2}\/\d{4}\s/.test(normKey)) {
+          const parts = normKey.substring(0,10).split('/');
+          normKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+        // Trim to YYYY-MM-DD
         normKey = normKey.substring(0, 10);
+        // Validate format
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(normKey)) {
+          console.warn('[Calendar] Unexpected key format after normalize:', key, '->', normKey);
+          // Try parsing as date if it's something else
+          try {
+            const d = new Date(key);
+            if (!isNaN(d)) {
+              const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), dy = String(d.getDate()).padStart(2,'0');
+              normKey = `${y}-${mo}-${dy}`;
+              console.log('[Calendar] Parsed date fallback:', key, '->', normKey);
+            }
+          } catch(e2) {}
+        }
         calendarData[normKey] = (calendarData[normKey] || []).concat(plans);
       });
+
+      console.log('[Calendar] Normalized keys:', Object.keys(calendarData).slice(0, 10));
+      console.log('[Calendar] Looking for monthStr:', monthStr);
+      // Check if any keys match this month
+      const matchingKeys = Object.keys(calendarData).filter(k => k.startsWith(monthStr));
+      console.log('[Calendar] Keys matching month', monthStr + ':', matchingKeys);
     } else {
+      console.warn('[Calendar] API returned no data:', res);
       calendarData = {};
     }
-  } catch(e) { console.error('Calendar load error:', e); calendarData = {}; }
+  } catch(e) { console.error('[Calendar] Load error:', e); calendarData = {}; }
 
   const today       = new Date(); today.setHours(0,0,0,0);
   const firstDay    = new Date(y, m, 1).getDay();
@@ -3143,7 +3212,7 @@ async function renderCalendar() {
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthStr}-${String(d).padStart(2,'0')}`;
-    const plans   = calendarData[dateStr] || [];
+    const plans   = calendarData[dateStr] || calendarData[dateStr.replace(/-/g,'/')] || [];
     const isToday = new Date(y,m,d).getTime() === today.getTime();
     const hasPlan = plans.length > 0;
     const calCls  = isToday ? 'today' : getCalClass(plans);
@@ -3619,24 +3688,64 @@ function renderMarketingDash(el, over, perf, month, channel) {
 let mgrTab = 'overview';
 
 async function loadManagerDashboard(el, month, channel) {
-  el.innerHTML = `<div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;" id="mgr-scroll">
-    <div class="mgr-tabs" id="mgr-tabs">
-      <button class="mgr-tab active"  onclick="switchMgrTab('overview','${month}','${channel}')">📊 Tổng quan</button>
-      <button class="mgr-tab"         onclick="switchMgrTab('staff',   '${month}','${channel}')">👥 Nhân sự</button>
-      <button class="mgr-tab"         onclick="switchMgrTab('cost',    '${month}','${channel}')">💰 Chi phí</button>
-      <button class="mgr-tab"         onclick="switchMgrTab('compare', '${month}','${channel}')">📈 So sánh</button>
-      <button class="mgr-tab"         onclick="switchMgrTab('ai',      '${month}','${channel}')">🤖 AI</button>
-    </div>
-    <div id="mgr-content"><div class="empty-state"><div class="ai-loader"></div></div></div>
-  </div>`;
+  const isDesk = isDesktop();
+
+  // On desktop: sidebar IS the navigation → no need for inner mgr-tabs
+  // Just render content directly based on mgrTab state
+  if (isDesk) {
+    el.innerHTML = `<div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding-bottom:24px;" id="mgr-scroll">
+      <div id="mgr-content"><div class="empty-state"><div class="ai-loader"></div></div></div>
+    </div>`;
+  } else {
+    // Mobile: show inner tab bar
+    el.innerHTML = `<div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;" id="mgr-scroll">
+      <div class="mgr-tabs" id="mgr-tabs">
+        <button class="mgr-tab active"  onclick="switchMgrTab('overview','${month}','${channel}')">📊 Tổng quan</button>
+        <button class="mgr-tab"         onclick="switchMgrTab('staff',   '${month}','${channel}')">👥 Nhân sự</button>
+        <button class="mgr-tab"         onclick="switchMgrTab('cost',    '${month}','${channel}')">💰 Chi phí</button>
+        <button class="mgr-tab"         onclick="switchMgrTab('compare', '${month}','${channel}')">📈 So sánh</button>
+        <button class="mgr-tab"         onclick="switchMgrTab('ai',      '${month}','${channel}')">🤖 AI</button>
+      </div>
+      <div id="mgr-content"><div class="empty-state"><div class="ai-loader"></div></div></div>
+    </div>`;
+  }
   await switchMgrTab(mgrTab, month, channel);
 }
 
+// Direct approval loader — for manager sidebar "Phê duyệt" click
+async function loadApprovalDirect() {
+  const el = document.getElementById('dash-content');
+  if (!el) return;
+  el.innerHTML = `<div style="flex:1;overflow-y:auto;padding-bottom:24px;" id="mgr-scroll">
+    <div id="mgr-content"><div class="empty-state"><div class="ai-loader"></div><div class="empty-sub">Đang tải...</div></div></div>
+  </div>`;
+  try {
+    const res = await api('GET', { action: 'getPendingApprovals' });
+    const contentEl = document.getElementById('mgr-content');
+    if (!contentEl) return;
+    if (res.success) {
+      await renderDashApproval(res.data, contentEl);
+      // Update badges
+      const cnt = res.data.length;
+      const badge = document.getElementById('sidebar-approval-badge');
+      if (badge) { badge.textContent = cnt; badge.style.display = cnt > 0 ? 'flex' : 'none'; }
+    } else {
+      contentEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">${res.error||'Lỗi'}</div></div>`;
+    }
+  } catch(e) {
+    const contentEl = document.getElementById('mgr-content');
+    if (contentEl) contentEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối</div></div>';
+  }
+}
+
 async function switchMgrTab(tab, month, channel) {
+  if (tab === 'approval_direct') { await loadApprovalDirect(); return; }
   mgrTab = tab;
   document.querySelectorAll('.mgr-tab').forEach((t,i) => {
     t.classList.toggle('active', ['overview','staff','cost','compare','ai'][i] === tab);
   });
+  // Update sidebar active state
+  updateSidebarActive();
   const el = document.getElementById('mgr-content');
   if (!el) return;
   el.innerHTML = '<div class="empty-state"><div class="ai-loader"></div><div class="empty-sub">Đang tải...</div></div>';
