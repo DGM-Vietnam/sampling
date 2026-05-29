@@ -1376,7 +1376,7 @@ let calMonth = new Date();
 let calendarData = {};
 let masterData = { products: [], locations: [], pgPricing: [] };
 let planFormData = {};
-let reportFormData = { imgLocation:[], imgFood:[], imgOverview:[], imgOther:[] };
+let reportFormData = { imgLocation:[], imgFood:[], imgOverview:[], imgOther:[], imgExtra:[] };
 let currentPlanId = null;
 let currentDashTab = 'overview';
 
@@ -2059,8 +2059,15 @@ function renderPlanDetail(p) {
       ${dr('Khu vực / Kênh', p.region)}
       ${dr('Người tạo', userName(p.creator))}
       ${dr('Điểm sampling', p.locationName)}
-      ${dr('Ngày thực hiện', fmtDate(p.date))}
-      ${dr('Thời gian', `${p.timeStart} – ${p.timeEnd}`)}
+      ${dr('Ngày thực hiện', p.dateEnd && p.dateEnd !== p.dateStart
+          ? `${fmtDate(p.dateStart || p.date)} → ${fmtDate(p.dateEnd)} (${(p.daySchedules||[]).length || 1} ngày)`
+          : fmtDate(p.date))}
+      ${(p.daySchedules && p.daySchedules.length > 1) ? dr('Lịch theo ngày',
+          p.daySchedules.map(s => {
+            const { label: dow } = getDayOfWeekLabel(s.date);
+            return `<div style="font-size:12px;margin-bottom:2px;"><b>${dow} ${fmtDate(s.date)}</b> · ${s.timeStart||''}–${s.timeEnd||''}${p.hiresPg && s.pgCount ? ` · ${s.pgCount} PG` : ''}</div>`;
+          }).join('')
+        ) : dr('Thời gian', `${(p.daySchedules&&p.daySchedules[0]&&p.daySchedules[0].timeStart)||p.timeStart||''} – ${(p.daySchedules&&p.daySchedules[0]&&p.daySchedules[0].timeEnd)||p.timeEnd||''}`)}
       ${dr('Người thực hiện', userNames(p.executors))}
       ${dr('Người giám sát', userName(p.supervisor) || p.supervisor || '—')}
     </div></div>
@@ -2138,7 +2145,7 @@ function dr(key, val) {
 // =====================================================
 function initCreatePlan(editPlanId = null) {
   currentPlanId = editPlanId;
-  planFormData = { samples: [], dishes: [], gifts: [], executors: [], supervisors: [], hiresPg: false, hasPromo: false, hasKiosk: false, hasInvoice: false, hasGift: false, _pgHours: 0, _pgRate: 0, _pgStart: '', _pgEnd: '' };
+  planFormData = { samples: [], dishes: [], gifts: [], executors: [], supervisors: [], hiresPg: false, hasPromo: false, hasKiosk: false, hasInvoice: false, hasGift: false, _pgHours: 0, _pgRate: 0, _pgStart: '', _pgEnd: '', daySchedules: [] };
   document.getElementById('create-plan-subtitle').textContent = editPlanId ? 'Chỉnh sửa: ' + editPlanId : 'Kế hoạch mới';
   renderCreatePlanForm();
   showScreen('create-plan');
@@ -2221,6 +2228,30 @@ function getDayType(dateStr, channel) {
 function isSaturday(dateStr) {
   if (!dateStr) return false;
   return new Date(dateStr).getDay() === 6;
+}
+
+/** Returns Vietnamese day-of-week label + weekend flag */
+function getDayOfWeekLabel(dateStr) {
+  if (!dateStr) return { label: '', isWeekend: false };
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay(); // 0=Sun,1=Mon,...,6=Sat
+  const labels = ['Chủ nhật','Thứ 2','Thứ 3','Thứ 4','Thứ 5','Thứ 6','Thứ 7'];
+  return { label: labels[day], isWeekend: day === 0 || day === 6 };
+}
+
+/** Generates array of date strings between startDate and endDate inclusive */
+function getDateRange(startStr, endStr) {
+  if (!startStr || !endStr) return startStr ? [startStr] : [];
+  const result = [];
+  const start = new Date(startStr + 'T00:00:00');
+  const end   = new Date(endStr   + 'T00:00:00');
+  if (end < start) return [startStr];
+  const cur = new Date(start);
+  while (cur <= end) {
+    result.push(cur.toISOString().split('T')[0]);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return result;
 }
 
 function getPgRate(hours, dateStr, channel) {
@@ -2313,83 +2344,152 @@ function getPgRate(hours, dateStr, channel) {
   };
 }
 
-function onSamplingTimeChange() {
-  const start = document.getElementById('f-start')?.value;
-  const end   = document.getElementById('f-end')?.value;
-  const hours = calcHoursDiff(start, end);
-  const dispEl = document.getElementById('sampling-hours-text');
-  if (dispEl) {
-    if (hours <= 0) { dispEl.textContent = '—'; }
-    else { dispEl.textContent = `${hours % 1 === 0 ? hours : hours.toFixed(1)} giờ thực hiện`; }
+// =====================================================
+// MULTI-DAY SCHEDULE LOGIC
+// =====================================================
+
+function onDateRangeChange() {
+  const startEl = document.getElementById('f-date-start');
+  const endEl   = document.getElementById('f-date-end');
+  if (!startEl || !endEl) return;
+
+  const startVal = startEl.value;
+  let endVal = endEl.value;
+
+  // Auto-set end ≥ start
+  if (startVal && endVal && endVal < startVal) {
+    endEl.value = startVal;
+    endVal = startVal;
   }
-  // Auto-sync PG times to sampling times if PG is toggled on
-  if (planFormData.hiresPg) {
-    const pgStart = document.getElementById('f-pg-start');
-    const pgEnd   = document.getElementById('f-pg-end');
-    if (pgStart && !pgStart.dataset.manuallyChanged) pgStart.value = start || '09:00';
-    if (pgEnd   && !pgEnd.dataset.manuallyChanged)   pgEnd.value   = end   || '12:00';
-    onPgTimeChange();
+  // If only start is set and no end, default end = start
+  if (startVal && !endVal) {
+    endEl.min = startVal;
   }
-}
+  if (startVal) endEl.min = startVal;
 
-function onPgTimeChange() {
-  const pgStart = document.getElementById('f-pg-start')?.value;
-  const pgEnd   = document.getElementById('f-pg-end')?.value;
-  const dateStr = document.getElementById('f-date')?.value;
-  const pgCount = parseInt(document.getElementById('f-pg-count')?.value) || 1;
-  const channel = document.getElementById('f-region')?.value || currentUser?.channel || '';
+  if (!startVal) return;
+  const effectiveEnd = endVal || startVal;
+  const dates = getDateRange(startVal, effectiveEnd);
 
-  const pgStartEl = document.getElementById('f-pg-start');
-  const pgEndEl   = document.getElementById('f-pg-end');
-  if (pgStartEl) pgStartEl.dataset.manuallyChanged = '1';
-  if (pgEndEl)   pgEndEl.dataset.manuallyChanged   = '1';
+  // Sync existing daySchedules: keep configs for existing dates, add new, remove old
+  const existing = planFormData.daySchedules || [];
+  planFormData.daySchedules = dates.map(d => {
+    const prev = existing.find(s => s.date === d);
+    return prev || {
+      date:      d,
+      timeStart: '09:00',
+      timeEnd:   '12:00',
+      pgCount:   planFormData.hiresPg ? 1 : 0,
+      pgStart:   '09:00',
+      pgEnd:     '12:00',
+      pgCost:    0,
+    };
+  });
 
-  const hours = calcHoursDiff(pgStart, pgEnd);
-  if (hours <= 0) {
-    const rateDisp = document.getElementById('pg-rate-display');
-    if (rateDisp) rateDisp.style.display = 'none';
-    planFormData._pgHours = 0; planFormData._pgRate = 0; planFormData._pgTotalCost = 0;
-    calcCost(); return;
-  }
-
-  // hourly rate based on channel + date holiday check
-  const { hourlyRate, label, note, dayType, channel: ch, rateSource } = getPgRate(hours, dateStr, channel);
-
-  // Tiền PG = Số PG × Số giờ × Đơn giá/giờ
-  const totalPgCost = pgCount * hours * hourlyRate;
-
-  const rateDisp = document.getElementById('pg-rate-display');
-  if (rateDisp) rateDisp.style.display = 'block';
-
-  const el = (id) => document.getElementById(id);
-  if (el('pg-rate-label')) el('pg-rate-label').textContent =
-    `Đơn giá/giờ/PG (${dayType}${ch ? ' · ' + ch : ''}):`;
-  if (el('pg-rate-value')) el('pg-rate-value').textContent = fmtCurrency(hourlyRate) + '/giờ';
-  if (el('pg-hours-calc')) el('pg-hours-calc').textContent =
-    pgCount + ' PG × ' + hours.toFixed(1) + 'h × ' + fmtCurrency(hourlyRate) + '/giờ';
-  if (el('pg-cost-calc'))  el('pg-cost-calc').textContent  = fmtCurrency(totalPgCost);
-  if (el('pg-rate-note'))  {
-    el('pg-rate-note').textContent   = note;
-    el('pg-rate-note').style.display = note ? 'block' : 'none';
-  }
-
-  const dayBadge = el('pg-day-badge');
-  if (dayBadge) {
-    const colors = { 'Ngày thường': 'var(--teal)', 'Lễ/Tết': 'var(--red)' };
-    dayBadge.textContent      = dayType;
-    dayBadge.style.background = colors[dayType] || 'var(--gray2)';
-    dayBadge.style.display    = 'inline-flex';
-  }
-
-  planFormData._pgHours     = hours;
-  planFormData._pgRate      = hourlyRate;
-  planFormData._pgTotalCost = totalPgCost;
-  planFormData._pgStart     = pgStart;
-  planFormData._pgEnd       = pgEnd;
-  planFormData._pgChannel   = channel;
-  planFormData._pgDayType   = dayType;
+  renderDayScheduleCards();
   calcCost();
 }
+
+function renderDayScheduleCards() {
+  const container = document.getElementById('day-schedules-container');
+  const hoursDisp = document.getElementById('sampling-hours-display');
+  const hoursText = document.getElementById('sampling-hours-text');
+  if (!container) return;
+
+  const schedules = planFormData.daySchedules || [];
+  if (schedules.length === 0) {
+    container.style.display = 'none';
+    if (hoursDisp) hoursDisp.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'flex';
+  if (hoursDisp) hoursDisp.style.display = 'flex';
+  if (hoursText) hoursText.textContent = `${schedules.length} ngày thực hiện`;
+
+  const channel = document.getElementById('f-region')?.value || currentUser?.channel || '';
+
+  container.innerHTML = schedules.map((s, i) => {
+    const { label: dowLabel, isWeekend } = getDayOfWeekLabel(s.date);
+    const isHol   = isHoliday(s.date);
+    const dayBadgeColor = isHol ? 'var(--red)' : (isWeekend ? 'var(--teal)' : 'var(--navy)');
+    const dayBadgeTxt   = isHol ? '🎉 Lễ/Tết' : (isWeekend ? '🏖 Cuối tuần' : '');
+
+    const pgHours   = calcHoursDiff(s.pgStart, s.pgEnd);
+    const pgRateObj = planFormData.hiresPg && pgHours > 0 ? getPgRate(pgHours, s.date, channel) : null;
+    const pgCost    = pgRateObj ? (s.pgCount || 0) * pgHours * pgRateObj.hourlyRate : 0;
+
+    // Store computed cost back
+    planFormData.daySchedules[i].pgCost = pgCost;
+
+    const pgSection = planFormData.hiresPg ? `
+      <div style="border-top:1px solid var(--gray3);margin-top:8px;padding-top:8px;">
+        <div style="font-size:11px;font-weight:700;color:var(--gray2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">PG</div>
+        <div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:6px;align-items:end;">
+          <div>
+            <div style="font-size:11px;color:var(--gray2);margin-bottom:3px;">Số PG</div>
+            <input class="form-input" type="number" min="0" max="20" value="${s.pgCount||0}" placeholder="0"
+              style="text-align:center;padding:7px 4px;font-size:13px;"
+              oninput="updateDaySchedule(${i},'pgCount',+this.value)">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--gray2);margin-bottom:3px;">Giờ bắt đầu PG</div>
+            <input class="form-input" type="time" value="${s.pgStart||'09:00'}"
+              style="padding:7px 6px;font-size:13px;"
+              onchange="updateDaySchedule(${i},'pgStart',this.value)">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--gray2);margin-bottom:3px;">Giờ kết thúc PG</div>
+            <input class="form-input" type="time" value="${s.pgEnd||'12:00'}"
+              style="padding:7px 6px;font-size:13px;"
+              onchange="updateDaySchedule(${i},'pgEnd',this.value)">
+          </div>
+        </div>
+        ${pgRateObj ? `<div style="background:var(--cream);border-radius:6px;padding:7px 10px;font-size:11px;color:var(--navy);margin-top:6px;display:flex;justify-content:space-between;align-items:center;">
+          <span>${pgRateObj.dayType} · ${fmtCurrency(pgRateObj.hourlyRate)}/giờ · ${pgHours.toFixed(1)}h × ${s.pgCount||0} PG</span>
+          <span style="font-weight:700;color:var(--red);">${fmtCurrency(pgCost)}</span>
+        </div>` : ''}
+      </div>` : '';
+
+    return `
+    <div style="background:var(--cream);border:1.5px solid ${isHol?'var(--red)':isWeekend?'var(--teal)':'var(--gray3)'};border-radius:10px;padding:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <div style="background:${dayBadgeColor};color:#fff;border-radius:8px;padding:3px 10px;font-size:13px;font-weight:800;">${dowLabel}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--navy);">${fmtDate(s.date)}</div>
+        ${dayBadgeTxt ? `<div style="background:${dayBadgeColor};color:#fff;border-radius:6px;padding:2px 8px;font-size:10px;font-weight:700;margin-left:auto;">${dayBadgeTxt}</div>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div>
+          <div style="font-size:11px;color:var(--gray2);margin-bottom:3px;">Giờ bắt đầu</div>
+          <input class="form-input" type="time" value="${s.timeStart}" style="padding:7px 6px;font-size:13px;"
+            onchange="updateDaySchedule(${i},'timeStart',this.value)">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray2);margin-bottom:3px;">Giờ kết thúc</div>
+          <input class="form-input" type="time" value="${s.timeEnd}" style="padding:7px 6px;font-size:13px;"
+            onchange="updateDaySchedule(${i},'timeEnd',this.value)">
+        </div>
+      </div>
+      ${pgSection}
+    </div>`;
+  }).join('');
+
+  calcCost();
+}
+
+function updateDaySchedule(idx, field, value) {
+  if (!planFormData.daySchedules[idx]) return;
+  planFormData.daySchedules[idx][field] = value;
+  // Rerender the cards to update PG cost display
+  renderDayScheduleCards();
+}
+
+// Legacy stubs — kept so any residual references don't throw
+function onSamplingTimeChange() { renderDayScheduleCards(); }
+function onPgTimeChange() { renderDayScheduleCards(); }
+
+
+
 function toggleGiftRequest() {
   const tog = document.getElementById('toggle-gift');
   planFormData.hasGift = !planFormData.hasGift;
@@ -2454,26 +2554,22 @@ function renderCreatePlanForm() {
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label class="required">Ngày thực hiện</label>
-            <input class="form-input" type="date" id="f-date" min="${new Date().toISOString().split('T')[0]}">
+            <label class="required">Từ ngày</label>
+            <input class="form-input" type="date" id="f-date-start" min="${new Date().toISOString().split('T')[0]}" onchange="onDateRangeChange()">
           </div>
           <div class="form-field">
-            <label class="required">Khu vực / Kênh</label>
-            <input class="form-input" type="text" id="f-region" value="${currentUser.channel || ''}" placeholder="MT / GT South...">
+            <label class="required">Đến ngày</label>
+            <input class="form-input" type="date" id="f-date-end" min="${new Date().toISOString().split('T')[0]}" onchange="onDateRangeChange()">
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label class="required">Giờ bắt đầu</label>
-            <input class="form-input" type="time" id="f-start" value="09:00" oninput="onSamplingTimeChange()">
-          </div>
-          <div class="form-field">
-            <label class="required">Giờ kết thúc</label>
-            <input class="form-input" type="time" id="f-end" value="12:00" oninput="onSamplingTimeChange()">
-          </div>
+        <div class="form-field">
+          <label class="required">Khu vực / Kênh</label>
+          <input class="form-input" type="text" id="f-region" value="${currentUser.channel || ''}" placeholder="MT / GT South...">
         </div>
-        <div id="sampling-hours-display" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--navy);border-radius:8px;color:#fff;font-size:13px;font-weight:600;">
-          <span>⏱</span><span id="sampling-hours-text">3 giờ thực hiện</span>
+        <!-- Per-day schedule cards -->
+        <div id="day-schedules-container" style="display:none;flex-direction:column;gap:10px;margin-top:4px;"></div>
+        <div id="sampling-hours-display" style="display:none;align-items:center;gap:8px;padding:6px 10px;background:var(--navy);border-radius:8px;color:#fff;font-size:13px;font-weight:600;">
+          <span>📅</span><span id="sampling-hours-text"></span>
         </div>
       </div>
     </div>
@@ -2498,42 +2594,9 @@ function renderCreatePlanForm() {
           <span class="toggle-label">Thuê PG ngoài</span>
           <div class="toggle" id="toggle-pg" onclick="togglePg()"></div>
         </div>
-        <div id="pg-fields" style="display:none;flex-direction:column;gap:12px;">
+        <div id="pg-global-note" style="display:none;flex-direction:column;gap:8px;margin-top:4px;">
           <div class="form-field">
-            <label>Số lượng PG</label>
-            <input class="form-input" type="number" id="f-pg-count" min="1" max="20" placeholder="2" oninput="calcCost()">
-          </div>
-          <div class="form-row">
-            <div class="form-field">
-              <label>Giờ bắt đầu PG</label>
-              <input class="form-input" type="time" id="f-pg-start" value="09:00" oninput="onPgTimeChange()">
-            </div>
-            <div class="form-field">
-              <label>Giờ kết thúc PG</label>
-              <input class="form-input" type="time" id="f-pg-end" value="12:00" oninput="onPgTimeChange()">
-            </div>
-          </div>
-          <div id="pg-rate-display" style="background:var(--cream);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--navy);display:none;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-              <span id="pg-day-badge" style="display:none;padding:2px 8px;border-radius:10px;color:#fff;font-size:10px;font-weight:700;"></span>
-              <span style="font-size:10px;color:var(--gray2);">Tự động theo ngày sampling</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;">
-              <span id="pg-rate-label">Đơn giá:</span>
-              <span id="pg-rate-value" style="font-weight:700;color:var(--red);"></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;margin-top:4px;">
-              <span>Số giờ:</span>
-              <span id="pg-hours-calc" style="font-weight:600;"></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;margin-top:4px;font-weight:700;border-top:1px solid var(--gray3);padding-top:6px;">
-              <span>Chi phí PG:</span>
-              <span id="pg-cost-calc" style="color:var(--red);"></span>
-            </div>
-            <div id="pg-rate-note" style="font-size:11px;color:var(--teal);margin-top:4px;display:none;"></div>
-          </div>
-          <div class="form-field">
-            <label>Ghi chú PG</label>
+            <label>Ghi chú PG (toàn bộ sự kiện)</label>
             <input class="form-input" type="text" id="f-pg-note" placeholder="Yêu cầu đặc biệt...">
           </div>
         </div>
@@ -2798,18 +2861,11 @@ function togglePg() {
   const tog = document.getElementById('toggle-pg');
   planFormData.hiresPg = !planFormData.hiresPg;
   tog.classList.toggle('on', planFormData.hiresPg);
-  const fields = document.getElementById('pg-fields');
-  fields.style.display = planFormData.hiresPg ? 'flex' : 'none';
-  if (planFormData.hiresPg) {
-    // Auto-fill PG times from sampling times
-    const sampStart = document.getElementById('f-start')?.value || '09:00';
-    const sampEnd   = document.getElementById('f-end')?.value   || '12:00';
-    const pgStartEl = document.getElementById('f-pg-start');
-    const pgEndEl   = document.getElementById('f-pg-end');
-    if (pgStartEl) { pgStartEl.value = sampStart; delete pgStartEl.dataset.manuallyChanged; }
-    if (pgEndEl)   { pgEndEl.value   = sampEnd;   delete pgEndEl.dataset.manuallyChanged; }
-    onPgTimeChange();
-  }
+  // Show/hide PG note field
+  const noteEl = document.getElementById('pg-global-note');
+  if (noteEl) noteEl.style.display = planFormData.hiresPg ? 'flex' : 'none';
+  // Re-render day schedule cards to show/hide PG rows per day
+  renderDayScheduleCards();
   calcCost();
 }
 function togglePromo()   { const t = document.getElementById('toggle-promo');   planFormData.hasPromo   = !planFormData.hasPromo;   t.classList.toggle('on', planFormData.hasPromo); }
@@ -2822,8 +2878,10 @@ function updateLocationName(val) {
 }
 
 function calcCost() {
-  // PG cost = Số PG × Số giờ × Đơn giá/giờ (pre-calculated in onPgTimeChange)
-  const pgCost  = planFormData.hiresPg ? (planFormData._pgTotalCost || 0) : 0;
+  // PG cost = sum of per-day PG costs
+  const pgCost  = planFormData.hiresPg
+    ? (planFormData.daySchedules || []).reduce((sum, s) => sum + (s.pgCost || 0), 0)
+    : 0;
   const locCost = parseFloat(document.getElementById('f-location-cost')?.value) || 0;
   const giftQty = planFormData.hasGift ? (parseInt(document.getElementById('f-gift-qty')?.value) || 0) : 0;
   const giftVal2= planFormData.hasGift ? (parseFloat(document.getElementById('f-gift-value')?.value) || 0) : 0;
@@ -2836,23 +2894,30 @@ function calcCost() {
 async function submitPlan() {
   const btn = document.getElementById('btn-submit-plan');
   // Collect all form values
+  const dateStart = document.getElementById('f-date-start')?.value;
+  const dateEnd   = document.getElementById('f-date-end')?.value || dateStart;
   const data = {
     locationName:  document.getElementById('f-location-name')?.value?.trim(),
     region:        document.getElementById('f-region')?.value?.trim(),
-    date:          document.getElementById('f-date')?.value,
-    timeStart:     document.getElementById('f-start')?.value,
-    timeEnd:       document.getElementById('f-end')?.value,
+    // Multi-day: keep date = first day for backward compat display; store full range
+    date:          dateStart,
+    dateStart:     dateStart,
+    dateEnd:       dateEnd,
+    daySchedules:  planFormData.daySchedules || [],
+    // Legacy single-day fields filled from first day for back-compat
+    timeStart:     (planFormData.daySchedules[0] || {}).timeStart || '09:00',
+    timeEnd:       (planFormData.daySchedules[0] || {}).timeEnd   || '12:00',
     executors:     planFormData.executors,
     supervisor:    planFormData.supervisorName || '',
     supervisorCode: planFormData.supervisorCode || '',
     hiresPg:       planFormData.hiresPg,
-    pgCount:       parseInt(document.getElementById('f-pg-count')?.value) || 0,
-    pgHours:       planFormData._pgHours     || 0,
-    pgStart:       planFormData._pgStart     || '',
-    pgEnd:         planFormData._pgEnd       || '',
-    pgRate:        planFormData._pgRate      || 0,  // hourly rate
-    pgTotalCost:   planFormData._pgTotalCost || 0,  // Số PG × giờ × rate
-    pgDayType:     planFormData._pgDayType   || 'Ngày thường',
+    pgCount:       planFormData.hiresPg ? ((planFormData.daySchedules[0] || {}).pgCount || 0) : 0,
+    pgHours:       planFormData.hiresPg ? calcHoursDiff((planFormData.daySchedules[0]||{}).pgStart, (planFormData.daySchedules[0]||{}).pgEnd) : 0,
+    pgStart:       planFormData.hiresPg ? ((planFormData.daySchedules[0] || {}).pgStart || '') : '',
+    pgEnd:         planFormData.hiresPg ? ((planFormData.daySchedules[0] || {}).pgEnd   || '') : '',
+    pgRate:        0,
+    pgTotalCost:   planFormData.hiresPg ? (planFormData.daySchedules || []).reduce((s,d) => s + (d.pgCost||0), 0) : 0,
+    pgDayType:     'Ngày thường',
     pgNote:        document.getElementById('f-pg-note')?.value?.trim(),
     locationCost:  parseFloat(document.getElementById('f-location-cost')?.value) || 0,
     costType:      document.getElementById('f-cost-type')?.value,
@@ -2877,6 +2942,13 @@ async function submitPlan() {
     notes:         document.getElementById('f-notes')?.value?.trim(),
   };
 
+  // Validation
+  if (!data.locationName) { showToast('Vui lòng nhập tên điểm sampling', 'error'); return; }
+  if (!data.dateStart) { showToast('Vui lòng chọn ngày bắt đầu', 'error'); return; }
+  if (data.daySchedules.length === 0) { showToast('Vui lòng chọn ngày thực hiện', 'error'); return; }
+  if (planFormData.samples.length === 0) { showToast('Vui lòng chọn ít nhất 1 sản phẩm sampling', 'error'); return; }
+  if (planFormData.executors.length === 0) { showToast('Vui lòng chọn người thực hiện', 'error'); return; }
+
   btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
   loading(true, 'Đang lưu kế hoạch...');
   try {
@@ -2898,7 +2970,7 @@ async function submitPlan() {
 // =====================================================
 function initReport(planId) {
   currentPlanId = planId;
-  reportFormData = { imgLocation:[], imgFood:[], imgOverview:[], imgOther:[], samplesUsed:[], markCompleted: false };
+  reportFormData = { imgLocation:[], imgFood:[], imgOverview:[], imgOther:[], imgExtra:[], samplesUsed:[], markCompleted: false };
   const cachedPlan = window._planCache && window._planCache[planId];
   const locLabel = cachedPlan ? `${cachedPlan.locationName} · ${fmtDate(cachedPlan.date)}` : planId;
   document.getElementById('report-plan-id').textContent = locLabel;
@@ -2907,16 +2979,18 @@ function initReport(planId) {
   showScreen('report');
 }
 
-function renderReportForm(planId) {
-  document.getElementById('report-content').innerHTML = `
-    <div class="spacer" style="height:8px;"></div>
+async function renderReportForm(planId) {
+  // First, fetch plan to check existing report count
+  let existingReportCount = 0;
+  try {
+    const res = await api('GET', { action:'getPlanDetail', planId });
+    if (res.success) existingReportCount = (res.data.reports || []).length;
+  } catch(e) {}
 
-    <!-- TIMEMARK NOTICE -->
-    <div class="timemark-notice" style="margin:0 16px 12px;">
-      Lưu ý đội sales: Tất cả hình ảnh phải được chụp qua app <b>Timemark</b> theo quy định của team sales.
-    </div>
+  const isFirstReport = existingReportCount === 0;
 
-    <!-- IMAGE UPLOADS -->
+  const imageSection = isFirstReport ? `
+    <!-- FULL IMAGE UPLOAD — First report -->
     <div class="form-section">
       <div class="form-section-header">📸 Hình ảnh báo cáo</div>
       <div class="form-section-body">
@@ -2925,7 +2999,27 @@ function renderReportForm(planId) {
         ${imageUploadBlock('imgOverview', '3. Hình toàn cảnh (nhân viên + booth + đồng phục)', true, 5)}
         ${imageUploadBlock('imgOther', '4. Hình ảnh khác', false, 27)}
       </div>
+    </div>` : `
+    <!-- SIMPLIFIED IMAGE UPLOAD — Subsequent reports -->
+    <div class="form-section">
+      <div class="form-section-header">📸 Hình ảnh bổ sung</div>
+      <div class="form-section-body">
+        <div class="timemark-notice" style="margin-bottom:8px;background:var(--cream);border:1px solid var(--gray3);color:var(--gray);">
+          Báo cáo lần ${existingReportCount + 1} — thông tin địa điểm & setup đã được ghi nhận từ báo cáo đầu tiên. Upload thêm ảnh nếu cần.
+        </div>
+        ${imageUploadBlock('imgExtra', 'Hình ảnh bổ sung (không bắt buộc)', false, 20)}
+      </div>
+    </div>`;
+
+  document.getElementById('report-content').innerHTML = `
+    <div class="spacer" style="height:8px;"></div>
+
+    <!-- TIMEMARK NOTICE -->
+    <div class="timemark-notice" style="margin:0 16px 12px;">
+      Lưu ý đội sales: Tất cả hình ảnh phải được chụp qua app <b>Timemark</b> theo quy định của team sales.
     </div>
+
+    ${imageSection}
 
     <!-- EFFECTIVENESS -->
     <div class="form-section">
@@ -2976,7 +3070,10 @@ function renderReportForm(planId) {
     <div class="spacer"></div>
   `;
 
-  // Load approved samples
+  // Store isFirstReport flag for submitReport validation
+  reportFormData._isFirstReport = isFirstReport;
+
+  // Load approved samples (already fetched above but calling separately for simplicity)
   loadApprovedSamplesForReport(planId);
 }
 
@@ -3056,7 +3153,7 @@ function removeImage(key, idx, el) {
   reportFormData[key].splice(idx, 1);
   el.remove();
   // Re-index remaining
-  const maxAdd = key === 'imgLocation' ? 3 : key === 'imgFood' ? 5 : key === 'imgOverview' ? 5 : 27;
+  const maxAdd = key === 'imgLocation' ? 3 : key === 'imgFood' ? 5 : key === 'imgOverview' ? 5 : key === 'imgExtra' ? 20 : 27;
   const countEl = document.getElementById(`count-${key}`);
   if (countEl) countEl.textContent = `${reportFormData[key].length} / ${maxAdd} ảnh`;
 }
@@ -3106,17 +3203,21 @@ async function submitReport() {
     notes:         document.getElementById('r-notes')?.value?.trim(),
     samplesUsed:   reportFormData.samplesUsed,
     markCompleted: reportFormData.markCompleted,
+    isFirstReport: reportFormData._isFirstReport,
     // Image data included — will be uploaded via Drive API separately
     imgLocation:   reportFormData.imgLocation.map(i => i.name),
     imgFood:       reportFormData.imgFood.map(i => i.name),
     imgOverview:   reportFormData.imgOverview.map(i => i.name),
     imgOther:      reportFormData.imgOther.map(i => i.name),
+    imgExtra:      (reportFormData.imgExtra || []).map(i => i.name),
   };
 
-  if (reportFormData.imgLocation.length === 0) { showToast('Bắt buộc có hình tên địa điểm', 'error'); return; }
-  if (reportFormData.imgFood.length === 0)     { showToast('Bắt buộc có hình món ăn', 'error'); return; }
-  if (reportFormData.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
-  if (!data.actualTasters)                     { showToast('Vui lòng nhập số người thử', 'error'); return; }
+  if (reportFormData._isFirstReport) {
+    if (reportFormData.imgLocation.length === 0) { showToast('Bắt buộc có hình tên địa điểm', 'error'); return; }
+    if (reportFormData.imgFood.length === 0)     { showToast('Bắt buộc có hình món ăn', 'error'); return; }
+    if (reportFormData.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
+  }
+  if (!data.actualTasters) { showToast('Vui lòng nhập số người thử', 'error'); return; }
 
   btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
   loading(true, 'Đang lưu báo cáo...');
@@ -5110,7 +5211,9 @@ function showScreen(name) {
   }
   // Set today date min
   const today = new Date().toISOString().split('T')[0];
-  document.querySelectorAll('input[type=date]').forEach(el => el.min = today);
+  document.querySelectorAll('input[type=date]').forEach(el => {
+    if (!el.min) el.min = today;
+  });
 })();
 </script>
 </body>
