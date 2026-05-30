@@ -649,6 +649,14 @@ body {
 select.form-input { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7a8d' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; appearance: none; }
 
 textarea.form-input { resize: none; min-height: 80px; }
+/* Force 24h time format regardless of device locale */
+input[type="time"].form-input,
+input[type="time"] {
+  -webkit-text-size-adjust: 100%;
+}
+input[type="time"]::-webkit-datetime-edit-ampm-field { display: none; }
+input[type="time"]::-webkit-datetime-edit-hour-field,
+input[type="time"]::-webkit-datetime-edit-minute-field { color: var(--navy); }
 
 /* Toggle switch */
 .toggle-wrap { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
@@ -1717,6 +1725,11 @@ function buildSidebarNav() {
       icon: '✅', label: 'Phê duyệt',
       action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='approval_direct'; loadApprovalDirect(); },
       screen: 'dashboard', key: 'approval', badgeId: 'sidebar-approval-badge',
+    });
+    items.push({
+      icon: '📦', label: 'Chuẩn bị',
+      action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='prep'; loadDashboard(); },
+      screen: 'dashboard', key: 'prep',
     });
     items.push({
       icon: '👥', label: 'Nhân sự',
@@ -3807,6 +3820,7 @@ async function loadManagerDashboard(el, month, channel) {
     el.innerHTML = `<div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;" id="mgr-scroll">
       <div class="mgr-tabs" id="mgr-tabs">
         <button class="mgr-tab active"  onclick="switchMgrTab('overview','${month}','${channel}')">📊 Tổng quan</button>
+        <button class="mgr-tab"         onclick="switchMgrTab('prep',    '${month}','${channel}')">📦 Chuẩn bị</button>
         <button class="mgr-tab"         onclick="switchMgrTab('staff',   '${month}','${channel}')">👥 Nhân sự</button>
         <button class="mgr-tab"         onclick="switchMgrTab('cost',    '${month}','${channel}')">💰 Chi phí</button>
         <button class="mgr-tab"         onclick="switchMgrTab('compare', '${month}','${channel}')">📈 So sánh</button>
@@ -3848,7 +3862,7 @@ async function switchMgrTab(tab, month, channel) {
   if (tab === 'approval_direct') { await loadApprovalDirect(); return; }
   mgrTab = tab;
   document.querySelectorAll('.mgr-tab').forEach((t,i) => {
-    t.classList.toggle('active', ['overview','staff','cost','compare','ai'][i] === tab);
+    t.classList.toggle('active', ['overview','prep','staff','cost','compare','ai'][i] === tab);
   });
   // Update sidebar active state
   updateSidebarActive();
@@ -3862,6 +3876,12 @@ async function switchMgrTab(tab, month, channel) {
         api('GET', { action:'getDashboardPerformance', month, channel }),
       ]);
       renderMgrOverview(el, ovR.success?ovR.data:null, pfR.success?pfR.data:null, month, channel);
+    } else if (tab === 'prep') {
+      const [pfR, usR] = await Promise.all([
+        api('GET', { action:'getDashboardPerformance', month, channel }),
+        api('GET', { action:'getUsers', channel:'', region:'' }),
+      ]);
+      renderMgrPrep(el, pfR.success?pfR.data:null, usR.success?usR.data:[], month, channel);
     } else if (tab === 'staff') {
       const [pfR, usR] = await Promise.all([
         api('GET', { action:'getDashboardPerformance', month, channel }),
@@ -3930,6 +3950,361 @@ function renderMgrOverview(el, over, perf, month, channel) {
   </div>`;
   html += '<div class="spacer"></div></div>';
   el.innerHTML = html;
+}
+
+// =====================================================
+// PREP TAB — Chuẩn bị sampling
+// =====================================================
+
+// State for prep filters (persisted during session)
+let prepState = {
+  period: 'this_week',   // this_week | next_week | this_month | next_month | custom
+  dateFrom: '',
+  dateTo: '',
+  person: '',            // '' = all, else creator code
+};
+
+function getPrepDateRange(period, dateFrom, dateTo) {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const dow = today.getDay(); // 0=Sun
+  const monday = new Date(today); monday.setDate(today.getDate() - (dow===0?6:dow-1));
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+  const addDays = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+  const fmt = d => d.toISOString().split('T')[0];
+
+  if (period === 'this_week')  return { from: fmt(monday),           to: fmt(sunday) };
+  if (period === 'next_week')  return { from: fmt(addDays(monday,7)),to: fmt(addDays(sunday,7)) };
+  if (period === 'this_month') return { from: fmt(new Date(today.getFullYear(), today.getMonth(), 1)),
+                                         to:   fmt(new Date(today.getFullYear(), today.getMonth()+1, 0)) };
+  if (period === 'next_month') return { from: fmt(new Date(today.getFullYear(), today.getMonth()+1, 1)),
+                                         to:   fmt(new Date(today.getFullYear(), today.getMonth()+2, 0)) };
+  if (period === 'custom')     return { from: dateFrom||fmt(monday), to: dateTo||fmt(sunday) };
+  return { from: fmt(monday), to: fmt(sunday) };
+}
+
+function planInRange(plan, from, to) {
+  // Check if ANY day of the plan overlaps with [from, to]
+  const planStart = plan.dateStart || plan.date || '';
+  const planEnd   = plan.dateEnd   || planStart;
+  if (!planStart) return false;
+  return planStart <= to && planEnd >= from;
+}
+
+function renderMgrPrep(el, perf, users, month, channel) {
+  const allItems = perf ? perf.items || [] : [];
+  // Filter to relevant statuses: cho_duyet, da_duyet (upcoming), hoan_thanh (done in period)
+  const relevantItems = allItems.filter(p =>
+    ['cho_duyet','da_duyet','hoan_thanh'].includes(p.status)
+  );
+
+  const { period, dateFrom, dateTo, person } = prepState;
+  const { from, to } = getPrepDateRange(period, dateFrom, dateTo);
+
+  // Period-filtered plans
+  let plans = relevantItems.filter(p => planInRange(p, from, to));
+
+  // Person filter
+  const allCreators = [...new Map(
+    relevantItems.map(p => [p.creator, users.find(u=>u.code===p.creator)])
+  ).entries()]
+    .filter(([code]) => code)
+    .map(([code, u]) => ({ code, name: u ? u.name : code }))
+    .sort((a,b) => a.name.localeCompare(b.name));
+
+  if (person) plans = plans.filter(p => p.creator === person);
+
+  const upcoming = plans.filter(p => p.status === 'da_duyet' || p.status === 'cho_duyet');
+  const done     = plans.filter(p => p.status === 'hoan_thanh');
+
+  // ── Build SKU map ──
+  const skuMap = {}; // ma → { ten, totalQty, priceGT, priceMT }
+  plans.forEach(p => {
+    (p.samples || []).forEach(s => {
+      if (!skuMap[s.ma]) {
+        const prod = masterData.products.find(pr => pr.ma === s.ma);
+        skuMap[s.ma] = { ma: s.ma, ten: prod ? prod.ten : s.ma, qty: 0, priceMT: prod?prod.giaMT:0, priceGT: prod?prod.giaGT:0 };
+      }
+      skuMap[s.ma].qty += (s.so_luong || 0);
+    });
+  });
+  const skuList = Object.values(skuMap).sort((a,b) => b.qty - a.qty);
+
+  // ── Build PG map (per-day from daySchedules) ──
+  const pgRows = [];
+  plans.forEach(p => {
+    if (!p.hiresPg) return;
+    const creatorUser = users.find(u => u.code === p.creator);
+    const creatorName = creatorUser ? creatorUser.name : (p.creator || '—');
+    if (p.daySchedules && p.daySchedules.length > 0) {
+      p.daySchedules.forEach(s => {
+        if (!planInRange({ dateStart: s.date, dateEnd: s.date }, from, to)) return;
+        if ((s.pgCount || 0) === 0) return;
+        const pgHrs = calcHoursDiff(s.pgStart || '09:00', s.pgEnd || '12:00');
+        const rate  = getPgRate(pgHrs, s.date, p.region || '');
+        const cost  = (s.pgCount || 0) * pgHrs * rate.hourlyRate;
+        const { label: dow } = getDayOfWeekLabel(s.date);
+        pgRows.push({ creator: creatorName, location: p.locationName, date: s.date, dow,
+          pgCount: s.pgCount || 0, pgStart: s.pgStart, pgEnd: s.pgEnd, hours: pgHrs, cost, status: p.status });
+      });
+    } else {
+      // Legacy single-day
+      const pgHrs = calcHoursDiff(p.pgStart || '09:00', p.pgEnd || '12:00');
+      const rate  = getPgRate(pgHrs, p.date, p.region || '');
+      const cost  = (p.pgCount || 0) * pgHrs * rate.hourlyRate;
+      const { label: dow } = getDayOfWeekLabel(p.date);
+      pgRows.push({ creator: creatorName, location: p.locationName, date: p.date, dow,
+        pgCount: p.pgCount || 0, pgStart: p.pgStart, pgEnd: p.pgEnd, hours: pgHrs, cost, status: p.status });
+    }
+  });
+  pgRows.sort((a,b) => a.date.localeCompare(b.date));
+  const totalPgCost = pgRows.reduce((s,r) => s + r.cost, 0);
+  const totalPgCount = pgRows.reduce((s,r) => s + r.pgCount, 0);
+
+  // ── Build Gift map ──
+  const giftMap = {}; // muc_dich → { muc_dich, qty, val }
+  plans.forEach(p => {
+    if (!p.hasGift) return;
+    (p.gifts || []).forEach(g => {
+      const key = g.muc_dich || 'Quà tặng';
+      if (!giftMap[key]) giftMap[key] = { muc_dich: key, qty: 0, val: 0, unitVal: g.gia_tri || 0 };
+      giftMap[key].qty += (g.so_luong || 0);
+      giftMap[key].val += (g.so_luong || 0) * (g.gia_tri || 0);
+      if (!giftMap[key].unitVal) giftMap[key].unitVal = g.gia_tri || 0;
+    });
+  });
+  const giftList = Object.values(giftMap).sort((a,b) => b.qty - a.qty);
+  const totalGiftQty = giftList.reduce((s,g) => s + g.qty, 0);
+  const totalGiftVal = giftList.reduce((s,g) => s + g.val, 0);
+
+  // ── Build person summary ──
+  const personMap = {};
+  plans.forEach(p => {
+    const c = p.creator || 'unknown';
+    if (!personMap[c]) {
+      const u = users.find(u => u.code === c);
+      personMap[c] = { name: u ? u.name : c, total: 0, upcoming: 0,
+        totalSamples: 0, pgCost: 0, giftQty: 0 };
+    }
+    personMap[c].total++;
+    if (p.status !== 'hoan_thanh') personMap[c].upcoming++;
+    (p.samples||[]).forEach(s => personMap[c].totalSamples += s.so_luong||0);
+    if (p.hiresPg) {
+      (p.daySchedules||[{pgCount:p.pgCount||0,pgStart:p.pgStart,pgEnd:p.pgEnd,date:p.date}]).forEach(s => {
+        if ((s.pgCount||0)===0) return;
+        const h = calcHoursDiff(s.pgStart||'09:00', s.pgEnd||'12:00');
+        const r = getPgRate(h, s.date, p.region||'');
+        personMap[c].pgCost += (s.pgCount||0) * h * r.hourlyRate;
+      });
+    }
+    if (p.hasGift) (p.gifts||[]).forEach(g => personMap[c].giftQty += g.so_luong||0);
+  });
+  const personList = Object.values(personMap).sort((a,b) => b.total - a.total);
+
+  // ── Period label ──
+  const periodLabels = {
+    this_week:'Tuần này', next_week:'Tuần sau',
+    this_month:'Tháng này', next_month:'Tháng sau', custom:'Tùy chọn'
+  };
+
+  // ── Render ──
+  let html = '<div style="padding:8px 0 0;" class="fade-in">';
+
+  // ── Filter bar ──
+  html += `<div style="padding:8px 16px 4px;display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${['this_week','next_week','this_month','next_month','custom'].map(p =>
+        `<button onclick="setPrepPeriod('${p}','${month}','${channel}','${from}','${to}')"
+          style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid ${period===p?'var(--red)':'var(--gray3)'};
+          background:${period===p?'var(--red)':'var(--white)'};color:${period===p?'#fff':'var(--navy)'};cursor:pointer;white-space:nowrap;">
+          ${periodLabels[p]}
+        </button>`).join('')}
+    </div>
+    ${period === 'custom' ? `
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="date" class="form-input" style="flex:1;font-size:12px;padding:6px 8px;"
+        value="${dateFrom||from}" onchange="prepState.dateFrom=this.value;refreshPrep('${month}','${channel}')">
+      <span style="font-size:12px;color:var(--gray2);">→</span>
+      <input type="date" class="form-input" style="flex:1;font-size:12px;padding:6px 8px;"
+        value="${dateTo||to}" onchange="prepState.dateTo=this.value;refreshPrep('${month}','${channel}')">
+    </div>` : ''}
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select class="form-input" style="flex:1;font-size:12px;padding:6px 8px;"
+        onchange="prepState.person=this.value;refreshPrep('${month}','${channel}')">
+        <option value="" ${!person?'selected':''}>👥 Tất cả nhân viên</option>
+        ${allCreators.map(c => `<option value="${c.code}" ${person===c.code?'selected':''}>${c.name}</option>`).join('')}
+      </select>
+      <div style="white-space:nowrap;font-size:11px;font-weight:700;color:var(--navy);background:var(--cream);padding:6px 10px;border-radius:8px;">
+        📅 ${from.split('-').slice(1).join('/')} → ${to.split('-').slice(1).join('/')}
+      </div>
+    </div>
+  </div>`;
+
+  // ── KPI bar ──
+  html += `<div class="dash-kpi-grid four">
+    ${kpiCard('Tổng buổi', plans.length, `${upcoming.length} sắp TH · ${done.length} đã xong`, 'red', '📋')}
+    ${kpiCard('Tổng mẫu', skuList.reduce((s,k)=>s+k.qty,0), `${skuList.length} SKU`, 'teal', '📦')}
+    ${kpiCard('Tổng PG', totalPgCount, fmtCurrency(totalPgCost), 'navy', '👤')}
+    ${kpiCard('Quà tặng', fmtNum(totalGiftQty), fmtCurrency(totalGiftVal), 'yellow', '🎁')}
+  </div>`;
+
+  // ── Table 1 — Per-person summary ──
+  html += `<div style="padding:4px 16px 0;"><div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:6px;">👤 Tổng hợp theo người lên plan</div>
+  <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;overflow-x:auto;">
+    <table style="width:100%;min-width:480px;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:var(--navy);color:#fff;">
+        <th style="padding:8px 10px;text-align:left;font-weight:700;">Nhân viên</th>
+        <th style="padding:8px 6px;text-align:center;font-weight:700;white-space:nowrap;">Đã lên</th>
+        <th style="padding:8px 6px;text-align:center;font-weight:700;white-space:nowrap;">Sắp TH</th>
+        <th style="padding:8px 6px;text-align:right;font-weight:700;white-space:nowrap;">Tổng mẫu</th>
+        <th style="padding:8px 6px;text-align:right;font-weight:700;white-space:nowrap;">CP PG</th>
+        <th style="padding:8px 6px;text-align:right;font-weight:700;white-space:nowrap;">Quà (SL)</th>
+      </tr></thead>
+      <tbody>
+        ${personList.length === 0 ? `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--gray2);">Không có dữ liệu trong khoảng thời gian này</td></tr>` :
+          personList.map((p,i) => `<tr style="border-bottom:1px solid var(--gray3);background:${i%2===0?'var(--white)':'var(--cream)'};">
+            <td style="padding:8px 10px;font-weight:600;">${p.name}</td>
+            <td style="padding:8px 6px;text-align:center;color:var(--navy);font-weight:700;">${p.total}</td>
+            <td style="padding:8px 6px;text-align:center;"><span style="background:${p.upcoming>0?'var(--red-light)':'var(--gray3)'};color:${p.upcoming>0?'var(--red)':'var(--gray2)'};padding:2px 8px;border-radius:10px;font-weight:700;">${p.upcoming}</span></td>
+            <td style="padding:8px 6px;text-align:right;font-weight:700;color:var(--teal);">${fmtNum(p.totalSamples)}</td>
+            <td style="padding:8px 6px;text-align:right;font-size:11px;">${p.pgCost>0?fmtCurrency(p.pgCost):'—'}</td>
+            <td style="padding:8px 6px;text-align:right;">${p.giftQty>0?fmtNum(p.giftQty):'—'}</td>
+          </tr>`).join('')}
+        ${personList.length > 1 ? `<tr style="background:var(--navy);color:#fff;font-weight:700;">
+          <td style="padding:8px 10px;">TỔNG</td>
+          <td style="padding:8px 6px;text-align:center;">${plans.length}</td>
+          <td style="padding:8px 6px;text-align:center;">${upcoming.length}</td>
+          <td style="padding:8px 6px;text-align:right;">${fmtNum(skuList.reduce((s,k)=>s+k.qty,0))}</td>
+          <td style="padding:8px 6px;text-align:right;font-size:11px;">${fmtCurrency(totalPgCost)}</td>
+          <td style="padding:8px 6px;text-align:right;">${fmtNum(totalGiftQty)}</td>
+        </tr>` : ''}
+      </tbody>
+    </table>
+  </div></div>`;
+
+  // ── Table 2 — SKU detail ──
+  html += `<div style="padding:12px 16px 0;"><div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:6px;">📦 Mẫu cần chuẩn bị theo SKU</div>
+  <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;overflow-x:auto;">
+    <table style="width:100%;min-width:380px;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:var(--teal);color:#fff;">
+        <th style="padding:8px 10px;text-align:left;font-weight:700;">Sản phẩm</th>
+        <th style="padding:8px 6px;text-align:right;font-weight:700;">Mã</th>
+        <th style="padding:8px 6px;text-align:right;font-weight:700;">SL (lon/gói)</th>
+        <th style="padding:8px 6px;text-align:right;font-weight:700;">T.tiền (MT)</th>
+        <th style="padding:8px 6px;text-align:right;font-weight:700;">T.tiền (GT)</th>
+      </tr></thead>
+      <tbody>
+        ${skuList.length === 0 ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--gray2);">Chưa có sản phẩm</td></tr>` :
+          skuList.map((s,i) => `<tr style="border-bottom:1px solid var(--gray3);background:${i%2===0?'var(--white)':'var(--cream)'};">
+            <td style="padding:8px 10px;font-weight:600;">${s.ten}</td>
+            <td style="padding:8px 6px;text-align:right;font-size:11px;color:var(--gray2);">${s.ma}</td>
+            <td style="padding:8px 6px;text-align:right;font-weight:800;font-size:14px;color:var(--red);">${fmtNum(s.qty)}</td>
+            <td style="padding:8px 6px;text-align:right;font-size:11px;">${s.priceMT>0?fmtCurrency(s.qty*s.priceMT):'—'}</td>
+            <td style="padding:8px 6px;text-align:right;font-size:11px;">${s.priceGT>0?fmtCurrency(s.qty*s.priceGT):'—'}</td>
+          </tr>`).join('')}
+        ${skuList.length > 0 ? `<tr style="background:var(--teal);color:#fff;font-weight:700;">
+          <td style="padding:8px 10px;" colspan="2">TỔNG</td>
+          <td style="padding:8px 6px;text-align:right;">${fmtNum(skuList.reduce((s,k)=>s+k.qty,0))}</td>
+          <td style="padding:8px 6px;text-align:right;font-size:11px;">${fmtCurrency(skuList.reduce((s,k)=>s+k.qty*(k.priceMT||0),0))}</td>
+          <td style="padding:8px 6px;text-align:right;font-size:11px;">${fmtCurrency(skuList.reduce((s,k)=>s+k.qty*(k.priceGT||0),0))}</td>
+        </tr>` : ''}
+      </tbody>
+    </table>
+  </div></div>`;
+
+  // ── Table 3 — PG detail ──
+  if (pgRows.length > 0) {
+    html += `<div style="padding:12px 16px 0;"><div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:6px;">👤 Chi tiết PG cần chuẩn bị</div>
+    <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;overflow-x:auto;">
+      <table style="width:100%;min-width:460px;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="background:var(--navy);color:#fff;">
+          <th style="padding:8px 10px;text-align:left;font-weight:700;">Người lên plan</th>
+          <th style="padding:8px 6px;text-align:left;font-weight:700;">Ngày</th>
+          <th style="padding:8px 6px;text-align:center;font-weight:700;">Số PG</th>
+          <th style="padding:8px 6px;text-align:center;font-weight:700;">Giờ</th>
+          <th style="padding:8px 6px;text-align:right;font-weight:700;">Chi phí</th>
+        </tr></thead>
+        <tbody>
+          ${pgRows.map((r,i) => {
+            const isHol = isHoliday(r.date);
+            const { isWeekend } = getDayOfWeekLabel(r.date);
+            const rowColor = isHol ? '#fff0f0' : isWeekend ? '#f0f7ff' : (i%2===0?'var(--white)':'var(--cream)');
+            const statusDot = r.status==='hoan_thanh'?'✅':r.status==='da_duyet'?'🟢':'🟡';
+            return `<tr style="border-bottom:1px solid var(--gray3);background:${rowColor};">
+              <td style="padding:8px 10px;font-weight:600;">${r.creator} ${statusDot}</td>
+              <td style="padding:8px 6px;white-space:nowrap;">
+                <span style="font-weight:700;">${r.dow}</span>
+                <span style="font-size:11px;color:var(--gray2);"> ${fmtDate(r.date)}</span>
+                ${isHol?'<span style="font-size:10px;background:var(--red);color:#fff;padding:1px 5px;border-radius:8px;margin-left:2px;">Lễ</span>':isWeekend?'<span style="font-size:10px;background:var(--teal);color:#fff;padding:1px 5px;border-radius:8px;margin-left:2px;">WE</span>':''}
+              </td>
+              <td style="padding:8px 6px;text-align:center;font-weight:800;color:var(--red);font-size:14px;">${r.pgCount}</td>
+              <td style="padding:8px 6px;text-align:center;font-size:11px;color:var(--gray2);">${r.pgStart||''}–${r.pgEnd||''}<br><span style="font-size:10px;">(${r.hours.toFixed(1)}h)</span></td>
+              <td style="padding:8px 6px;text-align:right;font-weight:700;">${fmtCurrency(r.cost)}</td>
+            </tr>`;
+          }).join('')}
+          <tr style="background:var(--navy);color:#fff;font-weight:700;">
+            <td style="padding:8px 10px;" colspan="2">TỔNG</td>
+            <td style="padding:8px 6px;text-align:center;">${totalPgCount} PG</td>
+            <td style="padding:8px 6px;"></td>
+            <td style="padding:8px 6px;text-align:right;">${fmtCurrency(totalPgCost)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div></div>`;
+  }
+
+  // ── Table 4 — Gift detail ──
+  if (giftList.length > 0) {
+    html += `<div style="padding:12px 16px 0;"><div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:6px;">🎁 Quà tặng cần chuẩn bị</div>
+    <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;overflow-x:auto;">
+      <table style="width:100%;min-width:360px;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="background:#a07800;color:#fff;">
+          <th style="padding:8px 10px;text-align:left;font-weight:700;">Mục đích quà</th>
+          <th style="padding:8px 6px;text-align:right;font-weight:700;">Số lượng</th>
+          <th style="padding:8px 6px;text-align:right;font-weight:700;">Giá trị/món</th>
+          <th style="padding:8px 6px;text-align:right;font-weight:700;">Tổng</th>
+        </tr></thead>
+        <tbody>
+          ${giftList.map((g,i) => `<tr style="border-bottom:1px solid var(--gray3);background:${i%2===0?'var(--white)':'var(--cream)'};">
+            <td style="padding:8px 10px;font-weight:600;">${g.muc_dich}</td>
+            <td style="padding:8px 6px;text-align:right;font-weight:800;color:var(--yellow2);font-size:14px;">${fmtNum(g.qty)}</td>
+            <td style="padding:8px 6px;text-align:right;font-size:11px;color:var(--gray2);">${g.unitVal>0?fmtCurrency(g.unitVal):'—'}</td>
+            <td style="padding:8px 6px;text-align:right;font-weight:700;">${g.val>0?fmtCurrency(g.val):'—'}</td>
+          </tr>`).join('')}
+          <tr style="background:#a07800;color:#fff;font-weight:700;">
+            <td style="padding:8px 10px;">TỔNG</td>
+            <td style="padding:8px 6px;text-align:right;">${fmtNum(totalGiftQty)}</td>
+            <td style="padding:8px 6px;"></td>
+            <td style="padding:8px 6px;text-align:right;">${fmtCurrency(totalGiftVal)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div></div>`;
+  }
+
+  html += '<div class="spacer"></div></div>';
+  el.innerHTML = html;
+}
+
+function setPrepPeriod(period, month, channel) {
+  prepState.period = period;
+  if (period !== 'custom') { prepState.dateFrom = ''; prepState.dateTo = ''; }
+  refreshPrep(month, channel);
+}
+
+async function refreshPrep(month, channel) {
+  const el = document.getElementById('mgr-content');
+  if (!el) return;
+  el.innerHTML = '<div class="empty-state"><div class="ai-loader"></div><div class="empty-sub">Đang tải...</div></div>';
+  try {
+    const [pfR, usR] = await Promise.all([
+      api('GET', { action:'getDashboardPerformance', month, channel }),
+      api('GET', { action:'getUsers', channel:'', region:'' }),
+    ]);
+    renderMgrPrep(el, pfR.success?pfR.data:null, usR.success?usR.data:[], month, channel);
+  } catch(e) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối</div></div>';
+  }
 }
 
 function renderMgrStaff(el, perf, users, month) {
