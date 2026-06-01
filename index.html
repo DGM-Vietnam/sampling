@@ -615,6 +615,8 @@ body {
 .status-yeu_cau_chinh_sua { background: #fff0e6; color: #c96a00; }
 .status-tu_choi         { background: #fdeaed; color: var(--red); }
 .status-hoan_thanh      { background: #e8f4fd; color: var(--teal); }
+.status-chip.status-yeu_cau_huy { background: #fde8e8; color: #c0392b; border: 1px solid #c0392b; }
+.status-chip.status-da_huy      { background: #eeeeee; color: #888; text-decoration: line-through; }
 
 /* =====================================================
    FORM STYLES
@@ -1549,7 +1551,7 @@ function fmtPercent(num, den) {
   return Math.round((num / den) * 100) + '%';
 }
 function statusLabel(s) {
-  const map = { cho_duyet:'Chờ duyệt', da_duyet:'Đã duyệt', yeu_cau_chinh_sua:'Cần chỉnh sửa', tu_choi:'Từ chối', hoan_thanh:'Hoàn thành' };
+  const map = { cho_duyet:'Chờ duyệt', da_duyet:'Đã duyệt', yeu_cau_chinh_sua:'Cần chỉnh sửa', tu_choi:'Từ chối', hoan_thanh:'Hoàn thành', yeu_cau_huy:'Yêu cầu hủy', da_huy:'Đã hủy' };
   return map[s] || s;
 }
 function statusChip(s) {
@@ -1908,16 +1910,21 @@ function setupHome() {
 }
 
 async function syncApprovalBadgeToSidebar() {
-  // Sync approval count to sidebar badge
   const isManager = currentUser && (currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing');
   if (!isManager) return;
   try {
-    const res = await api('GET', { action:'getPendingApprovals' });
-    if (res.success) {
-      const count = res.data.length;
-      const badge = document.getElementById('sidebar-approval-badge');
-      if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
-    }
+    const [approvalRes, cancelRes] = await Promise.all([
+      api('GET', { action: 'getPendingApprovals' }),
+      api('GET', { action: 'getCancelRequests'   }),
+    ]);
+    const approvalCount = approvalRes.success ? approvalRes.data.length : 0;
+    const cancelCount   = cancelRes.success   ? cancelRes.data.length   : 0;
+    const total = approvalCount + cancelCount;
+    const badge = document.getElementById('sidebar-approval-badge');
+    if (badge) { badge.textContent = total; badge.style.display = total > 0 ? 'flex' : 'none'; }
+    // Also update approval tab badge on mobile
+    const tabBadge = document.getElementById('approval-tab-badge');
+    if (tabBadge) { tabBadge.textContent = total; tabBadge.style.display = total > 0 ? 'flex' : 'none'; }
   } catch(e) {}
 }
 
@@ -2195,6 +2202,14 @@ function renderPlanDetail(p) {
     });
   }
 
+  // Determine cancel permission
+  const cancellableStatuses = ['cho_duyet','da_duyet','yeu_cau_chinh_sua','yeu_cau_huy'];
+  const canCancel = cancellableStatuses.includes(p.status) && (
+    isManager ||
+    (isMarketing && p.status !== 'da_huy') ||
+    (currentUser.role === 'Sales Representative' && String(p.creator) === String(currentUser.code))
+  );
+
   // Actions
   html += `<div style="display:flex;gap:8px;padding:0 16px;flex-wrap:wrap;">`;
   if (canEdit) html += `<button class="btn btn-outline" style="flex:1;min-width:120px;" onclick="initCreatePlan('${p.id}')">✏️ Chỉnh sửa</button>`;
@@ -2202,11 +2217,37 @@ function renderPlanDetail(p) {
     const bgStyle = p.status === 'hoan_thanh' ? 'background:var(--teal);' : '';
     html += `<button class="btn btn-primary" style="flex:1;min-width:120px;${bgStyle}" onclick="initReport('${p.id}')">${reportLabel}</button>`;
   }
-  // Manager can reopen a completed plan for additional reporting
   if (isManager && p.status === 'hoan_thanh') {
     html += `<button class="btn btn-secondary" style="flex:1;min-width:120px;" onclick="reopenPlan('${p.id}')">🔓 Mở lại</button>`;
   }
+  if (canCancel && p.status !== 'yeu_cau_huy') {
+    html += `<button class="btn btn-danger" style="flex:1;min-width:120px;" onclick="initCancelPlan('${p.id}','${p.status}')">🚫 Hủy</button>`;
+  }
   html += `</div>`;
+
+  // Cancel request pending banner + confirm/reject for manager/marketing
+  if (p.status === 'yeu_cau_huy') {
+    // Extract cancel reason from notes (last line starting with [ Rep/Marketing yêu cầu hủy])
+    const cancelNote = (p.notes||'').split('\n').reverse()
+      .find(l => l.includes('yêu cầu hủy') || l.includes('Manager hủy')) || '';
+    html += `<div style="background:#fde8e8;border-left:4px solid #c0392b;border-radius:0 8px 8px 0;padding:12px 14px;margin:8px 16px 4px;font-size:12px;">
+      <div style="font-weight:700;color:#c0392b;margin-bottom:4px;">⏳ Đang chờ xác nhận hủy</div>
+      ${cancelNote ? `<div style="color:var(--gray);margin-bottom:8px;">${cancelNote}</div>` : ''}
+      ${(isManager || isMarketing) ? `
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn btn-danger" style="flex:1;padding:8px;" onclick="confirmCancelPlan('${p.id}')">✅ Xác nhận hủy</button>
+        <button class="btn btn-outline" style="flex:1;padding:8px;" onclick="rejectCancelPlan('${p.id}')">↩️ Giữ lại kế hoạch</button>
+      </div>` : '<div style="color:var(--gray2);">Chờ Manager hoặc Marketing xác nhận.</div>'}
+    </div>`;
+  }
+
+  if (p.status === 'da_huy') {
+    const cancelNote = (p.notes||'').split('\n').reverse()
+      .find(l => l.includes('hủy') || l.includes('Hủy')) || '';
+    html += `<div style="background:#f5f5f5;border-left:4px solid #aaa;border-radius:0 8px 8px 0;padding:10px 14px;margin:8px 16px 4px;font-size:12px;color:#888;">
+      🚫 Kế hoạch đã bị hủy${cancelNote ? '<br><span style="font-size:11px;">' + cancelNote + '</span>' : ''}
+    </div>`;
+  }
 
   if (p.status === 'hoan_thanh') {
     const cnt = (p.reports||[]).length;
@@ -5037,7 +5078,14 @@ async function getCreatorName(userCode) {
 }
 
 async function renderDashApproval(plans, el) {
-  if (!plans || plans.length === 0) {
+  // Also load cancel requests and show them as a separate section
+  let cancelReqs = [];
+  try {
+    const cRes = await api('GET', { action: 'getCancelRequests' });
+    if (cRes.success) cancelReqs = cRes.data || [];
+  } catch(e) {}
+
+  if ((!plans || plans.length === 0) && cancelReqs.length === 0) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Không có kế hoạch chờ duyệt</div></div>';
     // Update badge
     const badge = document.getElementById('approval-badge');
@@ -5112,7 +5160,39 @@ async function renderDashApproval(plans, el) {
     </div>`;
   });
     if (isDesk) html += '</div>';
-html += '<div class="spacer"></div>';
+
+  // ── CANCEL REQUESTS SECTION ──
+  if (cancelReqs && cancelReqs.length > 0) {
+    html += `<div style="padding:12px 16px 4px;font-size:13px;color:#c0392b;font-weight:700;">
+      🚫 ${cancelReqs.length} yêu cầu hủy chờ xác nhận
+    </div>`;
+    if (isDesk) html += '<div class="approval-list-desktop">';
+    cancelReqs.forEach(p => {
+      const cancelNote = (p.notes||'').split('\n').reverse()
+        .find(l => l.includes('yêu cầu hủy') || l.includes('Manager hủy')) || '';
+      html += `<div class="approval-card" style="border-top:3px solid #c0392b;">
+        <div class="approval-card-top">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+            <div>
+              <div class="approval-card-name">${p.locationName}</div>
+              <div class="approval-card-meta">👤 ${userName(p.creator)} · 📅 ${fmtDate(p.date)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)} · 📍 ${p.region}</div>
+              <div style="font-size:11px;color:var(--gray2);">Tạo: ${fmtDateTime(p.createdAt)}</div>
+            </div>
+            ${statusChip('yeu_cau_huy')}
+          </div>
+          ${cancelNote ? `<div style="background:#fde8e8;border-radius:6px;padding:8px 10px;font-size:12px;color:#c0392b;margin-top:4px;">📝 ${cancelNote}</div>` : ''}
+        </div>
+        <div class="approval-actions">
+          <button class="btn btn-danger" style="flex:1;" onclick="confirmCancelPlan('${p.id}')">✅ Xác nhận hủy</button>
+          <button class="btn btn-outline" style="flex:1;" onclick="rejectCancelPlan('${p.id}')">↩️ Giữ lại</button>
+          <button class="btn btn-outline" style="padding:10px 12px;" onclick="viewPlanDetail('${p.id}')">👁</button>
+        </div>
+      </div>`;
+    });
+    if (isDesk) html += '</div>';
+  }
+
+  html += '<div class="spacer"></div>';
   el.innerHTML = html;
 }
 
@@ -5477,6 +5557,136 @@ async function reopenPlan(planId) {
       showToast('✅ Đã mở lại kế hoạch — nhân viên có thể báo cáo thêm', 'success', 4000);
       viewPlanDetail(planId);
     } else showToast(res.error || 'Có lỗi xảy ra', 'error');
+  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+  finally { loading(false); }
+}
+
+// ============================================================
+// CANCEL PLAN — Frontend Logic
+// ============================================================
+
+/**
+ * Show cancel dialog — behavior depends on role + plan status
+ */
+async function initCancelPlan(planId, planStatus) {
+  const isManager   = currentUser.role === 'Sales Manager';
+  const isMarketing = currentUser.role === 'Marketing';
+  const isRep       = currentUser.role === 'Sales Representative';
+
+  // Determine if immediate cancel or needs confirmation
+  const immediateCancel = isManager
+    || (isRep && planStatus === 'cho_duyet');
+
+  const modeNote = immediateCancel
+    ? '⚡ Kế hoạch sẽ được hủy ngay sau khi xác nhận.'
+    : '⏳ Yêu cầu hủy sẽ được gửi đến Manager/Marketing để xác nhận.
+
+Cần ít nhất 1 người có thẩm quyền đồng ý trước khi hủy có hiệu lực.';
+
+  const roleNote = isManager
+    ? '🔑 Bạn là Sales Manager — hủy không cần xác nhận thêm.'
+    : isMarketing
+    ? '📣 Bạn là Marketing — cần Manager hoặc Sales Rep xác nhận.'
+    : isRep && planStatus === 'cho_duyet'
+    ? '📋 Kế hoạch chưa duyệt — bạn có thể tự hủy.'
+    : '📋 Kế hoạch đã duyệt — cần Manager/Marketing xác nhận hủy.';
+
+  showModal(
+    '🚫 Hủy kế hoạch',
+    `<div style="margin-bottom:12px;font-size:13px;color:var(--gray);line-height:1.6;">
+       ${roleNote}
+     </div>
+     <div style="background:${immediateCancel?'var(--red-light)':'#fff3cd'};border-radius:8px;padding:10px 12px;font-size:12px;color:${immediateCancel?'var(--red)':'#856404'};margin-bottom:14px;white-space:pre-line;">
+       ${modeNote}
+     </div>
+     <div class="form-field">
+       <label class="required" style="font-size:13px;">Nguyên nhân hủy</label>
+       <textarea id="cancel-reason-input" class="form-input" rows="3"
+         placeholder="Ví dụ: Điểm bán không hợp tác, thay đổi kế hoạch kinh doanh..."
+         style="resize:none;font-family:var(--font);"></textarea>
+     </div>`,
+    [
+      {
+        label: immediateCancel ? '🚫 Xác nhận hủy' : '📤 Gửi yêu cầu hủy',
+        cls:   'btn btn-danger',
+        onclick: `executeCancelPlan('${planId}', ${immediateCancel})`,
+      },
+      { label: 'Đóng', cls: 'btn btn-outline', onclick: 'closeModal()' },
+    ]
+  );
+
+  // Focus textarea after modal renders
+  setTimeout(() => {
+    const ta = document.getElementById('cancel-reason-input');
+    if (ta) ta.focus();
+  }, 200);
+}
+
+async function executeCancelPlan(planId, isImmediate) {
+  const reason = document.getElementById('cancel-reason-input')?.value?.trim();
+  if (!reason) {
+    // Shake the textarea
+    const ta = document.getElementById('cancel-reason-input');
+    if (ta) { ta.style.border = '2px solid var(--red)'; setTimeout(() => ta.style.border='', 1500); }
+    showToast('Vui lòng nhập nguyên nhân hủy', 'error');
+    return;
+  }
+
+  closeModal();
+  loading(true, isImmediate ? 'Đang hủy kế hoạch...' : 'Đang gửi yêu cầu hủy...');
+
+  try {
+    const res = await api('POST', {
+      action:   'cancelPlan',
+      planId,
+      reason,
+      userCode: currentUser.code,
+    });
+
+    if (res.success) {
+      const msg = res.immediate
+        ? `✅ Kế hoạch ${planId} đã được hủy.`
+        : `📤 Đã gửi yêu cầu hủy kế hoạch ${planId}. Chờ xác nhận.`;
+      showToast(msg, 'success', 4000);
+      // Reload plan detail to reflect new status
+      await viewPlanDetail(planId);
+    } else {
+      showToast(res.error || 'Có lỗi xảy ra', 'error');
+    }
+  } catch(e) {
+    showToast('Lỗi kết nối', 'error');
+  } finally {
+    loading(false);
+  }
+}
+
+/** Manager/Marketing confirm a cancel request */
+async function confirmCancelPlan(planId) {
+  if (!confirm(`Xác nhận đồng ý HỦY kế hoạch ${planId}?\n\nHành động này không thể hoàn tác.`)) return;
+  loading(true, 'Đang xác nhận hủy...');
+  try {
+    const res = await api('POST', { action: 'confirmCancel', planId, userCode: currentUser.code });
+    if (res.success) {
+      showToast(`✅ Đã xác nhận hủy kế hoạch ${planId}`, 'success', 3500);
+      // Refresh approval list + plan detail
+      if (document.getElementById('screen-dashboard').classList.contains('active')) {
+        loadApprovalDirect();
+      }
+      showScreen('plans'); loadMyPlans();
+    } else showToast(res.error || 'Lỗi', 'error');
+  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+  finally { loading(false); }
+}
+
+/** Manager/Marketing reject a cancel request */
+async function rejectCancelPlan(planId) {
+  loading(true, 'Đang xử lý...');
+  try {
+    const res = await api('POST', { action: 'rejectCancel', planId, userCode: currentUser.code });
+    if (res.success) {
+      showToast(`Đã từ chối yêu cầu hủy — kế hoạch tiếp tục`, 'success', 3000);
+      loadApprovalDirect();
+    } else showToast(res.error || 'Lỗi', 'error');
   } catch(e) { showToast('Lỗi kết nối', 'error'); }
   finally { loading(false); }
 }
