@@ -4405,7 +4405,7 @@ function renderMgrCost(el, over, month) {
       return (b[1].cost||0) - (a[1].cost||0);
     });
     sortedChannels.forEach(([ch, data]) => {
-      const cpc = data.tasters>const cpc = data.tasters>0?Math.round((data.cost||0)/data.tasters):0;
+      const cpc = data.tasters>0?Math.round((data.cost||0)/data.tasters):0;
       html += `<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px;"><span>${ch}</span><span style="color:var(--red);">${fmtCurrency(data.cost||0)}</span></div><div class="bar-track"><div class="bar-fill" style="width:${Math.round((data.cost||0)/maxCost*100)}%;background:var(--red);"></div></div><div style="font-size:10px;color:var(--gray2);margin-top:3px;">${data.count} buổi · ${fmtCurrency(cpc)}/người thử</div></div>`;
     });
     html += '</div></div>';
@@ -4414,9 +4414,9 @@ function renderMgrCost(el, over, month) {
     const ct = over.monthlyTrend.slice(-6);
     const maxC = Math.max(...ct.map(m=>m.cost||0),1);
     html += sectionTitle('📈 Chi phí theo tháng');
-    html += `<div class="card" style="margin:0 16px 12px;"><div class="card-body"><div style="display:flex;align-items:flex-end;gap:4px;height:70px;">
-      ${ct.map((m,i)=>{const h=Math.max(Math.round(((m.cost||0)/maxC)*100),4);return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;justify-content:flex-end;"><div style="width:100%;height:${h}%;background:var(--navy);border-radius:3px 3px 0 0;opacity:${0.4+i*0.12};min-height:4px;"></div><div style="font-size:9px;color:var(--gray2);">${m.month.substring(5,7)}/${m.month.substring(2,4)}</div></div>`;}).join('')}
-    </div></div></div>`;
+    html += '<div class="card" style="margin:0 16px 12px;"><div class="card-body"><div style="display:flex;align-items:flex-end;gap:4px;height:70px;">'
+      + ct.map((m,i)=>{const h=Math.max(Math.round(((m.cost||0)/maxC)*100),4);return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;justify-content:flex-end;"><div style="width:100%;height:'+h+'%;background:var(--navy);border-radius:3px 3px 0 0;opacity:'+(0.4+i*0.12)+';min-height:4px;"></div><div style="font-size:9px;color:var(--gray2);">'+m.month.substring(5,7)+'/'+m.month.substring(2,4)+'</div></div>';}).join('')
+      + '</div></div></div>';
   }
   html += '<div class="spacer"></div></div>';
   el.innerHTML = html;
