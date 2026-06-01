@@ -5579,9 +5579,7 @@ async function initCancelPlan(planId, planStatus) {
 
   const modeNote = immediateCancel
     ? '⚡ Kế hoạch sẽ được hủy ngay sau khi xác nhận.'
-    : '⏳ Yêu cầu hủy sẽ được gửi đến Manager/Marketing để xác nhận.
-
-Cần ít nhất 1 người có thẩm quyền đồng ý trước khi hủy có hiệu lực.';
+    : '⏳ Yêu cầu hủy sẽ được gửi đến Manager/Marketing để xác nhận.\n\nCần ít nhất 1 người có thẩm quyền đồng ý trước khi hủy có hiệu lực.';
 
   const roleNote = isManager
     ? '🔑 Bạn là Sales Manager — hủy không cần xác nhận thêm.'
