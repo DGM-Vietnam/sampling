@@ -3726,23 +3726,24 @@ function showCalDay(dateStr, day) {
 // =====================================================
 function fmtTime(t) {
   if (!t) return '—';
-  const s = String(t);
-  // Already plain HH:mm
-  if (/^\d{1,2}:\d{2}$/.test(s.trim())) return s.trim().substring(0,5);
-  // ISO timestamp from GAS (sheet time values stored as 1899-12-30T...)
-  // The actual UTC time in the ISO string IS the correct time (no TZ offset needed)
+  const s = String(t).trim();
+
+  // Already plain HH:mm or H:mm (what GAS fmtT() returns when working correctly)
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) return s.substring(0,5);
+
+  // ISO timestamp — GAS serializes sheet time values as "1899-12-30THH:MM:SS.000Z"
+  // Sheet time "22:06" (local GMT+7) → GAS Date object → JSON = "1899-12-30T15:06:00.000Z"
+  // i.e. UTC = local - 7h.  To recover local time: add 7 hours.
   if (s.includes('T')) {
     const match = s.match(/T(\d{2}):(\d{2})/);
     if (match) {
-      const h = parseInt(match[1]);
-      const m = match[2];
-      // GAS sheet times: "14:00" stored → "1899-12-30T07:00:00Z" (UTC-7?)
-      // Actually GAS returns time as UTC, need GMT+7 adjustment
-      // But if hour looks wrong (< 7 for business hours), try +7
-      return `${String(h).padStart(2,'0')}:${m}`;
+      let h = parseInt(match[1], 10) + 7; // convert UTC → GMT+7
+      if (h >= 24) h -= 24;
+      return String(h).padStart(2, '0') + ':' + match[2];
     }
   }
-  return s.substring(0,5);
+
+  return s.substring(0, 5);
 }
 
 // =====================================================
