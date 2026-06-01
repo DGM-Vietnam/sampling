@@ -1269,7 +1269,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
       <div>
         <div class="header-title">Kế hoạch của tôi</div>
       </div>
-      <button class="header-action" onclick="showScreen('create-plan')">＋</button>
+      <button class="header-action" onclick="showScreen('create-plan');initCreatePlan().catch(()=>{})">＋</button>
     </div>
     <div class="screen-content no-bottom-nav">
       <div class="filter-row" style="padding-top:14px;">
@@ -1795,12 +1795,12 @@ function buildSidebarNav() {
     });
     items.push({
       icon: '➕', label: 'Lên kế hoạch',
-      action: () => { showScreen('create-plan'); initCreatePlan(); },
+      action: () => { showScreen('create-plan'); initCreatePlan().catch(()=>{}); },
       screen: 'create-plan',
     });
     items.push({
       icon: '📁', label: 'Kế hoạch',
-      action: () => { showScreen('plans'); loadMyPlans(); },
+      action: () => { showScreen('plans'); setTimeout(() => loadMyPlans(), 50); },
       screen: 'plans',
     });
     items.push({
@@ -2109,11 +2109,13 @@ function renderPlanDetail(p) {
   const back = document.getElementById('plan-detail-back');
   back.onclick = () => showScreen('plans');
 
-  const isManager = currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing';
-  const canEdit = (p.creator === currentUser.code || isManager) &&
+  const isManager   = currentUser.role === 'Sales Manager';
+  const isMarketing = currentUser.role === 'Marketing';
+  const isMgrOrMkt  = isManager || isMarketing;
+  const canEdit = (p.creator === currentUser.code || isMgrOrMkt) &&
     (p.status === 'cho_duyet' || p.status === 'yeu_cau_chinh_sua');
   const isExecutor = (p.executors||[]).includes(currentUser.code) || p.creator === currentUser.code;
-  const canReport  = (p.status === 'da_duyet' || p.status === 'hoan_thanh') && (isExecutor || isManager);
+  const canReport  = (p.status === 'da_duyet' || p.status === 'hoan_thanh') && (isExecutor || isMgrOrMkt);
   const reportLabel = p.status === 'hoan_thanh' ? '📊 Thêm báo cáo' : '📊 Báo cáo';
 
   // Check if there are differences between plan and approval
@@ -2217,7 +2219,7 @@ function renderPlanDetail(p) {
     const bgStyle = p.status === 'hoan_thanh' ? 'background:var(--teal);' : '';
     html += `<button class="btn btn-primary" style="flex:1;min-width:120px;${bgStyle}" onclick="initReport('${p.id}')">${reportLabel}</button>`;
   }
-  if (isManager && p.status === 'hoan_thanh') {
+  if (isMgrOrMkt && p.status === 'hoan_thanh') {
     html += `<button class="btn btn-secondary" style="flex:1;min-width:120px;" onclick="reopenPlan('${p.id}')">🔓 Mở lại</button>`;
   }
   if (canCancel && p.status !== 'yeu_cau_huy') {
@@ -2233,7 +2235,7 @@ function renderPlanDetail(p) {
     html += `<div style="background:#fde8e8;border-left:4px solid #c0392b;border-radius:0 8px 8px 0;padding:12px 14px;margin:8px 16px 4px;font-size:12px;">
       <div style="font-weight:700;color:#c0392b;margin-bottom:4px;">⏳ Đang chờ xác nhận hủy</div>
       ${cancelNote ? `<div style="color:var(--gray);margin-bottom:8px;">${cancelNote}</div>` : ''}
-      ${(isManager || isMarketing) ? `
+      ${isMgrOrMkt ? `
       <div style="display:flex;gap:8px;margin-top:8px;">
         <button class="btn btn-danger" style="flex:1;padding:8px;" onclick="confirmCancelPlan('${p.id}')">✅ Xác nhận hủy</button>
         <button class="btn btn-outline" style="flex:1;padding:8px;" onclick="rejectCancelPlan('${p.id}')">↩️ Giữ lại kế hoạch</button>
@@ -4389,10 +4391,21 @@ function renderMgrCost(el, over, month) {
   </div></div>`;
   if (Object.keys(cb).length > 0) {
     html += sectionTitle('💰 Chi phí theo kênh');
-    const maxCost = Math.max(...Object.values(cb).map(d=>d.cost||0),1);
+    // Show each channel/region separately (MT, GT South, GT Central, GT North)
+    const CHANNEL_ORDER = ['MT', 'GT South', 'GT Central', 'GT North', 'HCM', 'GT'];
+    const maxCost = Math.max(...Object.values(cb).map(d=>d.cost||0), 1);
     html += `<div class="card" style="margin:0 16px 12px;"><div class="card-body">`;
-    Object.entries(cb).sort((a,b)=>(b[1].cost||0)-(a[1].cost||0)).forEach(([ch,data]) => {
-      const cpc = data.tasters>0?Math.round((data.cost||0)/data.tasters):0;
+    // Sort by defined order, then by cost descending
+    const sortedChannels = Object.entries(cb).sort((a,b) => {
+      const ai = CHANNEL_ORDER.indexOf(a[0]);
+      const bi = CHANNEL_ORDER.indexOf(b[0]);
+      if (ai >= 0 && bi >= 0) return ai - bi;
+      if (ai >= 0) return -1;
+      if (bi >= 0) return 1;
+      return (b[1].cost||0) - (a[1].cost||0);
+    });
+    sortedChannels.forEach(([ch, data]) => {
+      const cpc = data.tasters>const cpc = data.tasters>0?Math.round((data.cost||0)/data.tasters):0;
       html += `<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px;"><span>${ch}</span><span style="color:var(--red);">${fmtCurrency(data.cost||0)}</span></div><div class="bar-track"><div class="bar-fill" style="width:${Math.round((data.cost||0)/maxCost*100)}%;background:var(--red);"></div></div><div style="font-size:10px;color:var(--gray2);margin-top:3px;">${data.count} buổi · ${fmtCurrency(cpc)}/người thử</div></div>`;
     });
     html += '</div></div>';
