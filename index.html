@@ -1173,7 +1173,195 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 .insight-card.yellow{ border-left-color: var(--yellow2); }
 .insight-title { font-size: 13px; font-weight: 700; color: var(--navy); }
 .insight-text  { font-size: 12px; color: var(--gray); margin-top: 4px; line-height: 1.5; }
-</style>
+
+/* =====================================================
+   KANBAN BOARD — Manager & Marketing
+===================================================== */
+.kanban-board {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px 24px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray3) transparent;
+  align-items: flex-start;
+}
+.kanban-board::-webkit-scrollbar { height: 4px; }
+.kanban-board::-webkit-scrollbar-thumb { background: var(--gray3); border-radius: 2px; }
+
+.kanban-col {
+  flex: 0 0 250px;
+  min-width: 250px;
+  background: var(--gray4);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 220px);
+}
+@media (min-width: 768px) {
+  .kanban-col { flex: 1 1 0; min-width: 210px; max-width: 320px; }
+}
+.kanban-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px 8px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.kanban-col-header.col-created  { background: #edf0f5; color: var(--navy);  border-bottom: 2px solid var(--navy); }
+.kanban-col-header.col-pending  { background: #fff8e0; color: #7c5c00; border-bottom: 2px solid var(--yellow2); }
+.kanban-col-header.col-approved { background: #e6f2fb; color: var(--teal);  border-bottom: 2px solid var(--teal); }
+.kanban-col-header.col-done     { background: #e7f5ed; color: var(--green); border-bottom: 2px solid var(--green); }
+
+.kanban-col-count {
+  background: rgba(0,0,0,0.10);
+  border-radius: 20px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.kanban-col-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  -webkit-overflow-scrolling: touch;
+}
+.kanban-col-body::-webkit-scrollbar { width: 3px; }
+.kanban-col-body::-webkit-scrollbar-thumb { background: var(--gray3); border-radius: 2px; }
+
+.kanban-card {
+  background: var(--white);
+  border-radius: 9px;
+  padding: 10px 11px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.1s;
+  border-left: 3px solid transparent;
+  animation: kanbanCardIn 0.16s ease both;
+}
+@keyframes kanbanCardIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+.kanban-card:hover  { box-shadow: 0 3px 14px rgba(0,0,0,0.12); transform: translateY(-1px); }
+.kanban-card:active { transform: scale(0.98); }
+.kanban-card.kc-cho_duyet           { border-left-color: var(--yellow2); }
+.kanban-card.kc-da_duyet            { border-left-color: var(--teal); }
+.kanban-card.kc-hoan_thanh          { border-left-color: var(--green); }
+.kanban-card.kc-yeu_cau_chinh_sua   { border-left-color: #e67e22; }
+.kanban-card.kc-tu_choi             { border-left-color: var(--red); opacity: 0.7; }
+.kanban-card.kc-da_huy              { border-left-color: var(--gray2); opacity: 0.55; }
+.kanban-card.kc-yeu_cau_huy         { border-left-color: #c0392b; }
+
+.kc-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 3px;
+  line-height: 1.3;
+}
+.kc-meta {
+  font-size: 10px;
+  color: var(--gray2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin-top: 4px;
+}
+.kc-creator {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--navy);
+  opacity: 0.7;
+  margin-top: 2px;
+}
+.kc-cost {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--red);
+  margin-top: 5px;
+}
+.kc-products {
+  font-size: 10px;
+  color: var(--gray);
+  margin-top: 3px;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.kc-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--gray3);
+}
+.kc-btn {
+  flex: 1;
+  font-size: 10px;
+  padding: 4px 2px;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-family: var(--font);
+  transition: opacity 0.12s;
+}
+.kc-btn:active { opacity: 0.75; }
+.kc-btn-approve { background: var(--green);      color: #fff; }
+.kc-btn-edit    { background: var(--gray3);       color: var(--navy); }
+.kc-btn-reject  { background: var(--red-light);   color: var(--red); }
+.kc-btn-view    { background: var(--gray4);        color: var(--navy); border: 1px solid var(--gray3); }
+
+.kanban-empty {
+  text-align: center;
+  padding: 20px 10px;
+  color: var(--gray2);
+  font-size: 11px;
+}
+.kanban-empty-icon { font-size: 22px; margin-bottom: 5px; }
+
+/* View toggle for plans/approval list */
+.view-toggle-bar {
+  display: flex;
+  gap: 0;
+  background: var(--gray3);
+  border-radius: 8px;
+  padding: 2px;
+  margin: 8px 16px 0;
+  align-self: flex-start;
+}
+.view-toggle-btn {
+  padding: 5px 14px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray2);
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.14s;
+}
+.view-toggle-btn.active {
+  background: var(--white);
+  color: var(--navy);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+}
+
 </head>
 <body>
 
@@ -1284,6 +1472,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
           <option value="hoan_thanh">Hoàn thành</option>
         </select>
       </div>
+      <div id="plans-view-toggle" style="display:none;"></div>
       <div class="spacer" style="height:8px;"></div>
       <div id="plans-list"></div>
     </div>
@@ -2012,10 +2201,29 @@ async function loadHomeStats() {
 // =====================================================
 // MY PLANS
 // =====================================================
+let _plansView = 'list'; // 'list' | 'kanban' — default list, kanban only for manager/marketing
+
 async function loadMyPlans() {
+  const isManagerRole = currentUser && (currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing');
   const month = document.getElementById('plan-filter-month').value;
   const statusFilter = document.getElementById('plan-filter-status').value;
   const listEl = document.getElementById('plans-list');
+  const toggleEl = document.getElementById('plans-view-toggle');
+
+  // Show view toggle for manager/marketing
+  if (toggleEl) {
+    if (isManagerRole) {
+      toggleEl.style.display = 'flex';
+      toggleEl.innerHTML = `
+        <div class="view-toggle-bar" style="margin:0 16px;">
+          <button class="view-toggle-btn ${_plansView==='list'?'active':''}" onclick="_plansView='list';loadMyPlans()">☰ Danh sách</button>
+          <button class="view-toggle-btn ${_plansView==='kanban'?'active':''}" onclick="_plansView='kanban';loadMyPlans()">📋 Kanban</button>
+        </div>`;
+    } else {
+      toggleEl.style.display = 'none';
+    }
+  }
+
   listEl.innerHTML = '<div class="empty-state"><div class="ai-loader"></div></div>';
   try {
     const res = await api('GET', { action:'getMyPlans', userCode:currentUser.code, month });
@@ -2027,13 +2235,94 @@ async function loadMyPlans() {
       return;
     }
     plans.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
-    // Cache all plans for location name lookup
     if (!window._planCache) window._planCache = {};
     plans.forEach(p => { window._planCache[p.id] = p; });
-    listEl.innerHTML = plans.map(p => planCard(p)).join('');
+
+    // Manager/Marketing: kanban view available
+    if (isManagerRole && _plansView === 'kanban') {
+      renderPlansKanban(plans, listEl);
+    } else {
+      listEl.innerHTML = plans.map(p => planCard(p)).join('');
+    }
   } catch(e) {
     listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối</div></div>';
   }
+}
+
+function renderPlansKanban(plans, el) {
+  // 4 columns: Đã lên plan | Chờ duyệt | Đã duyệt / Duyệt có sửa | Hoàn thành
+  const cols = [
+    {
+      key: 'created', label: '📝 Đã lên plan', cls: 'col-created',
+      statuses: ['yeu_cau_chinh_sua', 'tu_choi', 'yeu_cau_huy', 'da_huy'],
+    },
+    {
+      key: 'pending', label: '⏳ Chờ duyệt', cls: 'col-pending',
+      statuses: ['cho_duyet'],
+    },
+    {
+      key: 'approved', label: '✅ Đã duyệt', cls: 'col-approved',
+      statuses: ['da_duyet'],
+    },
+    {
+      key: 'done', label: '🏁 Hoàn thành', cls: 'col-done',
+      statuses: ['hoan_thanh'],
+    },
+  ];
+
+  let html = '<div class="kanban-board">';
+  cols.forEach(col => {
+    const items = plans.filter(p => col.statuses.includes(p.status));
+    html += `<div class="kanban-col">
+      <div class="kanban-col-header ${col.cls}">
+        <span>${col.label}</span>
+        <span class="kanban-col-count">${items.length}</span>
+      </div>
+      <div class="kanban-col-body">`;
+
+    if (items.length === 0) {
+      html += `<div class="kanban-empty"><div class="kanban-empty-icon">—</div>Trống</div>`;
+    } else {
+      items.forEach(p => {
+        const isManagerRole2 = currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing';
+        const canApproveThis  = isManagerRole2 && p.status === 'cho_duyet';
+        const isExecutor2 = (p.executors||[]).map(String).includes(String(currentUser.code)) || String(p.creator) === String(currentUser.code);
+        const canReport2  = (p.status === 'da_duyet' || p.status === 'hoan_thanh') && (isExecutor2 || isManagerRole2);
+
+        const sampleList = (p.samples||[]).map(s => {
+          const prod = masterData.products.find(pr => pr.ma === s.ma);
+          return `${prod ? prod.ten : s.ma} ×${s.so_luong}`;
+        }).join(', ') || '—';
+
+        html += `<div class="kanban-card kc-${p.status}" onclick="viewPlanDetail('${p.id}')">
+          <div class="kc-name">${p.locationName}</div>
+          <div class="kc-creator">👤 ${userName(p.creator)}</div>
+          <div class="kc-meta">
+            <span>📅 ${fmtDate(p.date)}</span>
+            <span>📍 ${p.region}</span>
+          </div>
+          <div class="kc-meta"><span>⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}</span></div>
+          <div class="kc-products">${sampleList}</div>
+          ${p.hiresPg && p.pgCount > 0 ? `<div class="kc-meta" style="margin-top:3px;"><span>👥 ${p.pgCount} PG · ${p.pgHours||'?'}h/ngày</span></div>` : ''}
+          <div class="kc-cost">${fmtCurrency(p.totalEstCost)}</div>
+          ${(canApproveThis || canReport2) ? `
+          <div class="kc-actions" onclick="event.stopPropagation()">
+            ${canApproveThis ? `
+              <button class="kc-btn kc-btn-approve" onclick="quickApprove('${p.id}')">✅ Duyệt</button>
+              <button class="kc-btn kc-btn-edit" onclick="inlineEditModal('${p.id}')">✏️</button>
+              <button class="kc-btn kc-btn-reject" onclick="rejectModal('${p.id}')">❌</button>
+            ` : ''}
+            ${canReport2 && !canApproveThis ? `
+              <button class="kc-btn kc-btn-view" style="font-size:9px;" onclick="initReport('${p.id}')">📊 Báo cáo</button>
+            ` : ''}
+          </div>` : ''}
+        </div>`;
+      });
+    }
+    html += `</div></div>`;
+  });
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 function planCard(p) {
@@ -2808,7 +3097,6 @@ function onSamplingTimeChange() {
 function onPgTimeChange() {
   const pgStart = document.getElementById('f-pg-start')?.value;
   const pgEnd   = document.getElementById('f-pg-end')?.value;
-  const dateStr = document.getElementById('f-date')?.value;
   const pgCount = parseInt(document.getElementById('f-pg-count')?.value) || 1;
   const channel = document.getElementById('f-region')?.value || currentUser?.channel || '';
 
@@ -2817,44 +3105,57 @@ function onPgTimeChange() {
   if (pgStartEl) pgStartEl.dataset.manuallyChanged = '1';
   if (pgEndEl)   pgEndEl.dataset.manuallyChanged   = '1';
 
-  const hours = calcHoursDiff(pgStart, pgEnd);
-  if (hours <= 0) {
+  const hoursPerDay = calcHoursDiff(pgStart, pgEnd);
+  if (hoursPerDay <= 0) {
     const rateDisp = document.getElementById('pg-rate-display');
     if (rateDisp) rateDisp.style.display = 'none';
     planFormData._pgHours = 0; planFormData._pgRate = 0; planFormData._pgTotalCost = 0;
     calcCost(); return;
   }
 
-  // hourly rate based on channel + date holiday check
-  const { hourlyRate, label, note, dayType, channel: ch, rateSource } = getPgRate(hours, dateStr, channel);
+  // Multi-day support: count days and detect if ANY day is holiday
+  const days = planFormData.days || [];
+  const numDays = Math.max(days.length, 1);
+  // Use first day for rate reference; if any day is a holiday, flag it
+  const firstDateStr = days.length > 0 ? days[0].date : (document.getElementById('f-date-start')?.value || '');
+  const hasHoliday   = days.some(d => isHoliday(d.date));
+  // Override dateStr passed to getPgRate to reflect holiday status
+  const dateStrForRate = hasHoliday
+    ? '2026-04-30' // known holiday to trigger holiday rate
+    : (firstDateStr || '');
 
-  // Tiền PG = Số PG × Số giờ × Đơn giá/giờ
-  const totalPgCost = pgCount * hours * hourlyRate;
+  // hourly rate based on channel + date holiday check
+  const { hourlyRate, label, note, dayType, channel: ch, rateSource } = getPgRate(hoursPerDay, dateStrForRate, channel);
+
+  // Tiền PG = Số PG × Giờ/ngày × Đơn giá/giờ × Số ngày
+  const totalPgCost = pgCount * hoursPerDay * hourlyRate * numDays;
 
   const rateDisp = document.getElementById('pg-rate-display');
   if (rateDisp) rateDisp.style.display = 'block';
 
   const el = (id) => document.getElementById(id);
+  const multiDayLabel = numDays > 1 ? ` × ${numDays} ngày` : '';
   if (el('pg-rate-label')) el('pg-rate-label').textContent =
     `Đơn giá/giờ/PG (${dayType}${ch ? ' · ' + ch : ''}):`;
   if (el('pg-rate-value')) el('pg-rate-value').textContent = fmtCurrency(hourlyRate) + '/giờ';
   if (el('pg-hours-calc')) el('pg-hours-calc').textContent =
-    pgCount + ' PG × ' + hours.toFixed(1) + 'h × ' + fmtCurrency(hourlyRate) + '/giờ';
-  if (el('pg-cost-calc'))  el('pg-cost-calc').textContent  = fmtCurrency(totalPgCost);
+    pgCount + ' PG × ' + hoursPerDay.toFixed(1) + 'h' + (numDays > 1 ? '/ngày × ' + numDays + ' ngày' : '') + ' × ' + fmtCurrency(hourlyRate) + '/giờ';
+  if (el('pg-cost-calc'))  el('pg-cost-calc').textContent  = fmtCurrency(totalPgCost) + (numDays > 1 ? ` (${numDays} ngày)` : '');
   if (el('pg-rate-note'))  {
-    el('pg-rate-note').textContent   = note;
+    el('pg-rate-note').textContent   = note + (hasHoliday && numDays > 1 ? ' ⚠️ Có ngày lễ trong kỳ' : '');
     el('pg-rate-note').style.display = note ? 'block' : 'none';
   }
 
   const dayBadge = el('pg-day-badge');
   if (dayBadge) {
     const colors = { 'Ngày thường': 'var(--teal)', 'Lễ/Tết': 'var(--red)' };
-    dayBadge.textContent      = dayType;
-    dayBadge.style.background = colors[dayType] || 'var(--gray2)';
+    dayBadge.textContent      = hasHoliday ? 'Có ngày Lễ/Tết' : dayType;
+    dayBadge.style.background = hasHoliday ? 'var(--red)' : (colors[dayType] || 'var(--gray2)');
     dayBadge.style.display    = 'inline-flex';
   }
 
-  planFormData._pgHours     = hours;
+  planFormData._pgHours     = hoursPerDay;
+  planFormData._pgNumDays   = numDays;
   planFormData._pgRate      = hourlyRate;
   planFormData._pgTotalCost = totalPgCost;
   planFormData._pgStart     = pgStart;
@@ -3275,9 +3576,16 @@ function togglePg() {
   const fields = document.getElementById('pg-fields');
   fields.style.display = planFormData.hiresPg ? 'flex' : 'none';
   if (planFormData.hiresPg) {
-    // Auto-fill PG times from sampling times
-    const sampStart = document.getElementById('f-start')?.value || '09:00';
-    const sampEnd   = document.getElementById('f-end')?.value   || '12:00';
+    // Auto-fill PG times from first day card (date-range mode) or legacy f-start
+    const days = planFormData.days || [];
+    let sampStart = '09:00', sampEnd = '18:00';
+    if (days.length > 0) {
+      sampStart = days[0].timeStart || sampStart;
+      sampEnd   = days[0].timeEnd   || sampEnd;
+    } else {
+      sampStart = document.getElementById('f-start')?.value || sampStart;
+      sampEnd   = document.getElementById('f-end')?.value   || sampEnd;
+    }
     const pgStartEl = document.getElementById('f-pg-start');
     const pgEndEl   = document.getElementById('f-pg-end');
     if (pgStartEl) { pgStartEl.value = sampStart; delete pgStartEl.dataset.manuallyChanged; }
@@ -3334,10 +3642,11 @@ async function submitPlan() {
     hiresPg:       planFormData.hiresPg,
     pgCount:       parseInt(document.getElementById('f-pg-count')?.value) || 0,
     pgHours:       planFormData._pgHours     || 0,
+    pgNumDays:     planFormData._pgNumDays   || Math.max((planFormData.days||[]).length, 1),
     pgStart:       planFormData._pgStart     || '',
     pgEnd:         planFormData._pgEnd       || '',
     pgRate:        planFormData._pgRate      || 0,  // hourly rate
-    pgTotalCost:   planFormData._pgTotalCost || 0,  // Số PG × giờ × rate
+    pgTotalCost:   planFormData._pgTotalCost || 0,  // Số PG × giờ/ngày × rate × numDays
     pgDayType:     planFormData._pgDayType   || 'Ngày thường',
     pgNote:        document.getElementById('f-pg-note')?.value?.trim(),
     locationCost:  parseFloat(document.getElementById('f-location-cost')?.value) || 0,
@@ -5090,6 +5399,9 @@ async function getCreatorName(userCode) {
   return _userNameCache[userCode] || userCode;
 }
 
+// ── Approval view state ──
+let _approvalView = 'kanban'; // 'kanban' | 'list'
+
 async function renderDashApproval(plans, el) {
   // Also load cancel requests and show them as a separate section
   let cancelReqs = [];
@@ -5099,18 +5411,15 @@ async function renderDashApproval(plans, el) {
   } catch(e) {}
 
   if ((!plans || plans.length === 0) && cancelReqs.length === 0) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Không có kế hoạch chờ duyệt</div></div>';
-    // Update badge
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Không có kế hoạch chờ duyệt</div><div class="empty-sub">Tất cả đã được xử lý 🎉</div></div>';
     const badge = document.getElementById('approval-badge');
     if (badge) badge.style.display = 'none';
     return;
   }
 
-  // Update badge
+  // Update badges
   const badge = document.getElementById('approval-badge');
   if (badge) { badge.textContent = plans.length; badge.style.display = 'flex'; }
-
-  // Also update dash tab badge
   const tabBadge = document.getElementById('approval-tab-badge');
   if (tabBadge) { tabBadge.textContent = plans.length; tabBadge.style.display = 'inline-flex'; }
 
@@ -5120,8 +5429,110 @@ async function renderDashApproval(plans, el) {
     if (res.success) res.data.forEach(u => { _userNameCache[u.code] = u.name; });
   } catch(e) {}
 
-  let html = `<div style="padding:12px 16px 4px;font-size:13px;color:var(--gray2);font-weight:600;">${plans.length} kế hoạch đang chờ duyệt</div>`;
+  const totalPending = plans.length + cancelReqs.length;
+
+  let html = `
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 4px;">
+    <div style="font-size:13px;color:var(--gray2);font-weight:600;">${plans.length} chờ duyệt${cancelReqs.length > 0 ? ` · <span style="color:#c0392b;">${cancelReqs.length} yêu cầu hủy</span>` : ''}</div>
+    <div class="view-toggle-bar">
+      <button class="view-toggle-btn ${_approvalView==='kanban'?'active':''}" onclick="_approvalView='kanban';_rerenderApproval()">📋 Kanban</button>
+      <button class="view-toggle-btn ${_approvalView==='list'?'active':''}" onclick="_approvalView='list';_rerenderApproval()">☰ Danh sách</button>
+    </div>
+  </div>`;
+
+  // Store data for re-render
+  window._lastApprovalPlans = plans;
+  window._lastCancelReqs    = cancelReqs;
+  window._lastApprovalEl    = el;
+
+  el.innerHTML = html + '<div id="approval-content-area"></div><div class="spacer"></div>';
+  _renderApprovalContent(plans, cancelReqs, document.getElementById('approval-content-area'));
+}
+
+function _rerenderApproval() {
+  const el = window._lastApprovalEl;
+  if (!el) return;
+  // Update toggle button states
+  el.querySelectorAll('.view-toggle-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.includes('Kanban') ? _approvalView==='kanban' : _approvalView==='list');
+  });
+  _renderApprovalContent(window._lastApprovalPlans||[], window._lastCancelReqs||[], document.getElementById('approval-content-area'));
+}
+
+function _renderApprovalContent(plans, cancelReqs, el) {
+  if (!el) return;
+  if (_approvalView === 'kanban') {
+    _renderApprovalKanban(plans, cancelReqs, el);
+  } else {
+    _renderApprovalList(plans, cancelReqs, el);
+  }
+}
+
+function _renderApprovalKanban(plans, cancelReqs, el) {
+  // Build a small kanban: Chờ duyệt | Cần chỉnh sửa | Yêu cầu hủy
+  const cols = [
+    { key:'cho_duyet',      label:'⏳ Chờ duyệt',       cls:'col-pending',  plans: plans },
+    { key:'yeu_cau_huy',    label:'🚫 Yêu cầu hủy',     cls:'col-created',  plans: cancelReqs },
+  ];
+
+  let html = '<div class="kanban-board">';
+  cols.forEach(col => {
+    const items = col.plans || [];
+    html += `<div class="kanban-col">
+      <div class="kanban-col-header ${col.cls}">
+        <span>${col.label}</span>
+        <span class="kanban-col-count">${items.length}</span>
+      </div>
+      <div class="kanban-col-body">`;
+
+    if (items.length === 0) {
+      html += `<div class="kanban-empty"><div class="kanban-empty-icon">✅</div>Trống</div>`;
+    } else {
+      items.forEach(p => {
+        const sampleList = (p.samples||[]).map(s => {
+          const prod = masterData.products.find(pr => pr.ma === s.ma);
+          return `${prod ? prod.ten : s.ma} ×${s.so_luong}`;
+        }).join(', ') || '—';
+
+        const isCancel = col.key === 'yeu_cau_huy';
+        const cancelNote = isCancel
+          ? ((p.notes||'').split('\n').reverse().find(l => l.includes('yêu cầu hủy') || l.includes('hủy')) || '')
+          : '';
+
+        html += `<div class="kanban-card kc-${p.status}" onclick="${isCancel ? `viewPlanDetail('${p.id}')` : `viewPlanDetail('${p.id}')`}">
+          <div class="kc-name">${p.locationName}</div>
+          <div class="kc-creator">👤 ${userName(p.creator)}</div>
+          <div class="kc-meta">
+            <span>📅 ${fmtDate(p.date)}</span>
+            <span>⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}</span>
+            <span>📍 ${p.region}</span>
+          </div>
+          <div class="kc-products">${sampleList}</div>
+          ${p.hiresPg && p.pgCount > 0 ? `<div class="kc-meta" style="margin-top:3px;"><span>👥 ${p.pgCount} PG · ${p.pgHours||'?'}h/ngày</span></div>` : ''}
+          ${isCancel && cancelNote ? `<div style="background:#fde8e8;border-radius:5px;padding:5px 7px;font-size:10px;color:#c0392b;margin-top:5px;">${cancelNote.substring(0,80)}${cancelNote.length>80?'…':''}</div>` : ''}
+          <div class="kc-cost">${fmtCurrency(p.totalEstCost)}</div>
+          <div class="kc-actions" onclick="event.stopPropagation()">
+            ${isCancel ? `
+              <button class="kc-btn kc-btn-approve" onclick="confirmCancelPlan('${p.id}')">✅ Xác nhận hủy</button>
+              <button class="kc-btn kc-btn-edit" onclick="rejectCancelPlan('${p.id}')">↩ Giữ lại</button>
+            ` : `
+              <button class="kc-btn kc-btn-approve" onclick="quickApprove('${p.id}')">✅ Duyệt</button>
+              <button class="kc-btn kc-btn-edit" onclick="inlineEditModal('${p.id}')">✏️ Sửa</button>
+              <button class="kc-btn kc-btn-reject" onclick="rejectModal('${p.id}')">❌</button>
+            `}
+          </div>
+        </div>`;
+      });
+    }
+    html += `</div></div>`;
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function _renderApprovalList(plans, cancelReqs, el) {
   const isDesk = window.innerWidth >= 768;
+  let html = '';
   if (isDesk) html += '<div class="approval-list-desktop">';
 
   plans.forEach(p => {
@@ -5130,7 +5541,6 @@ async function renderDashApproval(plans, el) {
       const prod = masterData.products.find(pr => pr.ma === s.ma);
       return `${prod ? prod.ten : s.ma} (${s.so_luong})`;
     }).join(', ') || '—';
-
     const giftInfo = p.hasGift && (p.gifts||[]).length > 0
       ? `🎁 ${p.gifts[0].so_luong || 0} món × ${fmtCurrency(p.gifts[0].gia_tri || 0)} — ${p.gifts[0].muc_dich || ''}`
       : '';
@@ -5152,10 +5562,9 @@ async function renderDashApproval(plans, el) {
           </div>
           ${statusChip(p.status)}
         </div>
-
         <div style="margin-top:10px;padding:10px 12px;background:var(--gray4);border-radius:8px;font-size:12px;display:flex;flex-direction:column;gap:5px;">
           <div><span style="color:var(--gray2);">📦 Sản phẩm:</span> <span style="font-weight:600;">${sampleList}</span></div>
-          ${p.hiresPg ? `<div><span style="color:var(--gray2);">👥 PG:</span> <span style="font-weight:600;">${p.pgCount} PG · ${p.timeStart||p.pgStart||''}–${p.timeEnd||p.pgEnd||''} (${p.pgHours ? p.pgHours+'h' : '—'})</span></div>` : '<div><span style="color:var(--gray2);">👥 PG:</span> Không thuê</div>'}
+          ${p.hiresPg ? `<div><span style="color:var(--gray2);">👥 PG:</span> <span style="font-weight:600;">${p.pgCount} PG · ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)} (${p.pgHours ? p.pgHours+'h/ngày' : '—'})</span></div>` : '<div><span style="color:var(--gray2);">👥 PG:</span> Không thuê</div>'}
           ${p.locationCost ? `<div><span style="color:var(--gray2);">💰 Chi phí ĐĐ:</span> <span style="font-weight:600;">${fmtCurrency(p.locationCost)} (${p.costType||''})</span></div>` : ''}
           ${giftInfo ? `<div><span style="color:var(--gray2);">🎁 Quà tặng:</span> <span style="font-weight:600;">${giftInfo}</span></div>` : '<div><span style="color:var(--gray2);">🎁 Quà tặng:</span> Không yêu cầu</div>'}
           <div style="border-top:1px solid var(--gray3);margin-top:2px;padding-top:6px;font-weight:700;display:flex;justify-content:space-between;">
@@ -5168,13 +5577,12 @@ async function renderDashApproval(plans, el) {
         <button class="btn btn-green btn-sm" onclick="quickApprove('${p.id}')">✅ Duyệt</button>
         <button class="btn btn-secondary btn-sm" onclick="inlineEditModal('${p.id}')">✏️ Chỉnh sửa</button>
         <button class="btn btn-danger btn-sm" onclick="rejectModal('${p.id}')">❌ Từ chối</button>
-        <button class="btn btn-outline btn-sm" onclick="commentModal('${p.id}','${p.locationName.replace(/'/g,"\'")}')">💬 Comment</button>
+        <button class="btn btn-outline btn-sm" onclick="commentModal('${p.id}','${p.locationName.replace(/'/g,"\\'")}')">💬 Comment</button>
       </div>
     </div>`;
   });
-    if (isDesk) html += '</div>';
+  if (isDesk) html += '</div>';
 
-  // ── CANCEL REQUESTS SECTION ──
   if (cancelReqs && cancelReqs.length > 0) {
     html += `<div style="padding:12px 16px 4px;font-size:13px;color:#c0392b;font-weight:700;">
       🚫 ${cancelReqs.length} yêu cầu hủy chờ xác nhận
@@ -5204,8 +5612,6 @@ async function renderDashApproval(plans, el) {
     });
     if (isDesk) html += '</div>';
   }
-
-  html += '<div class="spacer"></div>';
   el.innerHTML = html;
 }
 
