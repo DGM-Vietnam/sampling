@@ -2204,7 +2204,11 @@ async function loadHomeStats() {
 let _plansView = 'list'; // 'list' | 'kanban' — default list, kanban only for manager/marketing
 
 async function loadMyPlans() {
-  const isManagerRole = currentUser && (currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing');
+  if (!currentUser || !currentUser.code) {
+    console.warn('loadMyPlans: no currentUser');
+    return;
+  }
+  const isManagerRole = currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing';
   const month = document.getElementById('plan-filter-month').value;
   const statusFilter = document.getElementById('plan-filter-status').value;
   const listEl = document.getElementById('plans-list');
@@ -2245,7 +2249,8 @@ async function loadMyPlans() {
       listEl.innerHTML = plans.map(p => planCard(p)).join('');
     }
   } catch(e) {
-    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối</div></div>';
+    console.error('loadMyPlans error:', e);
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi: ' + (e.message||e) + '</div></div>';
   }
 }
 
@@ -2340,8 +2345,10 @@ function planCard(p) {
     const rateRow = pricing.find(r =>
       (r.channel === ch || r.channel === 'ALL') && !r.isHoliday
     );
-    const rate = rateRow ? rateRow.ratePerPg : (ch === 'GT' ? 50000 : 45000);
-    pgCostDisplay = fmtCurrency(p.pgCount * p.pgHours * rate);
+    const rate    = rateRow ? rateRow.ratePerPg : (ch === 'GT' ? 50000 : 45000);
+    const numDays = p.numDays || 1;
+    pgCostDisplay = fmtCurrency(p.pgCount * p.pgHours * rate * numDays)
+      + (numDays > 1 ? ` (${numDays}N)` : '');
   }
 
   const statusLabel = p.status === 'hoan_thanh' && reportCount > 0
