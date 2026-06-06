@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.1.5">
+<meta name="version" content="2.2.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -885,36 +885,7 @@ textarea.form-input { resize: none; min-height: 80px; }
   border-top: 1px solid var(--gray3);
 }
 .approval-actions .btn { flex: 1; padding: 10px 8px; font-size: 13px; }
-
-/* AI Analysis */
-.ai-option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 16px 0; }
-.ai-option {
-  background: var(--white);
-  border-radius: var(--radius);
-  padding: 14px;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-  border: 2px solid transparent;
-  transition: all 0.2s;
-  -webkit-tap-highlight-color: transparent;
-}
-.ai-option.selected { border-color: var(--red); background: var(--red-light); }
-.ai-option-icon { font-size: 24px; margin-bottom: 6px; }
-.ai-option-title { font-size: 13px; font-weight: 700; color: var(--navy); }
-.ai-option-desc  { font-size: 11px; color: var(--gray2); margin-top: 3px; }
-
-.ai-result-box {
-  background: var(--white);
-  border-radius: var(--radius);
-  margin: 14px 16px 0;
-  padding: 16px;
-  box-shadow: var(--shadow);
-  font-size: 14px; line-height: 1.7;
-  color: var(--navy);
-  min-height: 120px;
-  white-space: pre-wrap;
-}
-.ai-result-box .ai-loading { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 0; color: var(--gray2); font-size: 13px; }
+/* Loading spinner (used across all tabs) */
 .ai-loader { width: 32px; height: 32px; border: 3px solid var(--gray3); border-top-color: var(--red); border-radius: 50%; animation: spin 0.8s linear infinite; }
 
 .filter-row { display: flex; gap: 8px; padding: 12px 16px 0; }
@@ -1585,7 +1556,6 @@ body.mgr-mobile #screen-home .screen-content { padding-bottom: 70px; }
           <span id="approval-tab-badge" style="display:none;position:absolute;top:6px;right:4px;background:var(--red);color:#fff;border-radius:8px;min-width:16px;height:16px;font-size:10px;font-weight:700;padding:0 4px;align-items:center;justify-content:center;"></span>
         </button>
         <button class="dash-tab" onclick="showDashTab('performance')">📈 Hiệu quả</button>
-        <button class="dash-tab" onclick="showDashTab('ai')">🤖 AI Analysis</button>
       </div>
     </div>
     <!-- Filter row -->
@@ -1639,8 +1609,8 @@ body.mgr-mobile #screen-home .screen-content { padding-bottom: 70px; }
 // CONSTANTS & STATE
 // =====================================================
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
-const MAX_IMAGES = 40;
-const TARGET_IMG_KB = 400; // compress to ~400KB each
+const MAX_IMAGES = 20;
+const TARGET_IMG_KB = 150; // compress to ~150KB each
 
 let currentUser = null;
 let currentLang = 'vi';
@@ -1658,7 +1628,7 @@ let currentDashTab = 'overview';
 const T = {
   vi: {
     dashTitle: 'Quản lý Sampling',
-    tabOverview: '📊 Tổng quan', tabApproval: '✅ Duyệt', tabPerf: '📈 Hiệu quả', tabAi: '🤖 AI Analysis',
+    tabOverview: '📊 Tổng quan', tabApproval: '✅ Duyệt', tabPerf: '📈 Hiệu quả',
     totalEvents: 'Tổng buổi sampling', pending: 'Chờ duyệt', approved: 'Đã duyệt', completed: 'Hoàn thành',
     totalTasters: 'Tổng người thử', avgPerEvent: 'TB người thử/buổi',
     totalSales: 'Doanh số ghi nhận', totalCost: 'Tổng chi phí',
@@ -1668,7 +1638,7 @@ const T = {
   },
   en: {
     dashTitle: 'Sampling Manager',
-    tabOverview: '📊 Overview', tabApproval: '✅ Approval', tabPerf: '📈 Performance', tabAi: '🤖 AI Analysis',
+    tabOverview: '📊 Overview', tabApproval: '✅ Approval', tabPerf: '📈 Performance',
     totalEvents: 'Total events', pending: 'Pending', approved: 'Approved', completed: 'Completed',
     totalTasters: 'Total tasters', avgPerEvent: 'Avg tasters/event',
     totalSales: 'Recorded sales', totalCost: 'Total cost',
@@ -1835,7 +1805,21 @@ function populateMonthFilters() {
  * POST data is encoded as "payload" URL param (stringified JSON).
  * GAS doGet() reads e.parameter.payload and dispatches accordingly.
  */
+// Simple API response cache — GET only, 30s TTL
+const _apiCache = {};
+function _cacheKey(params) { return JSON.stringify(params); }
+
 async function api(method, params) {
+  // Cache GET requests for dashboard/overview data (30s TTL)
+  if (method === 'GET') {
+    const cacheableActions = ['getDashboardOverview','getDashboardPerformance','getUsers','getMyPlans'];
+    if (cacheableActions.includes(params.action)) {
+      const ck = _cacheKey(params);
+      const cached = _apiCache[ck];
+      if (cached && Date.now() - cached.ts < 30000) return cached.data;
+    }
+  }
+
   let urlParams;
   if (method === 'GET') {
     urlParams = new URLSearchParams(params);
@@ -1857,6 +1841,11 @@ async function api(method, params) {
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const data = await res.json();
     console.log('[API] response data:', data);
+    // Store in cache for GET requests
+    if (method === 'GET') {
+      const ck = _cacheKey(params);
+      _apiCache[ck] = { data, ts: Date.now() };
+    }
     return data;
   } catch (err) {
     console.error('[API] error:', err.message, 'URL:', url.substring(0, 150));
@@ -2062,11 +2051,6 @@ function buildSidebarNav() {
       action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='compare'; loadDashboard(); },
       screen: 'dashboard', key: 'compare',
     });
-    items.push({
-      icon: '🤖', label: 'AI Analysis',
-      action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='ai'; loadDashboard(); },
-      screen: 'dashboard', key: 'ai',
-    });
   } else {
     // Rep / Salesman
     items.push({ icon: '🏠', label: 'Trang chủ', action: () => showScreen('home'), screen: 'home' });
@@ -2234,7 +2218,6 @@ function renderHomeMenu() {
   }
   if (isManager) {
     html += menuCard('📊', 'Dashboard', 'Tổng hợp & phân tích', () => { showScreen('dashboard'); setupDashboardForRole(); loadDashboard(); }, false, 'highlight');
-    html += menuCard('✅', 'Phê duyệt', 'Kế hoạch chờ duyệt', () => { showScreen('dashboard'); showDashTab('approval'); loadDashboard(); }, false, '', 'approval-menu-card');
   }
 
   document.getElementById('home-menu').innerHTML = html;
@@ -4666,7 +4649,6 @@ async function loadManagerDashboard(el, month, channel) {
         <button class="mgr-tab"         onclick="switchMgrTab('staff',   '${month}','${channel}')">👥 Nhân sự</button>
         <button class="mgr-tab"         onclick="switchMgrTab('cost',    '${month}','${channel}')">💰 Chi phí</button>
         <button class="mgr-tab"         onclick="switchMgrTab('compare', '${month}','${channel}')">📈 So sánh</button>
-        <button class="mgr-tab"         onclick="switchMgrTab('ai',      '${month}','${channel}')">🤖 AI</button>
       </div>
       <div id="mgr-content"><div class="empty-state"><div class="ai-loader"></div></div></div>
     </div>`;
@@ -4704,7 +4686,7 @@ async function switchMgrTab(tab, month, channel) {
   if (tab === 'approval_direct') { await loadApprovalDirect(); return; }
   mgrTab = tab;
   document.querySelectorAll('.mgr-tab').forEach((t,i) => {
-    t.classList.toggle('active', ['overview','staff','cost','compare','ai'][i] === tab);
+    t.classList.toggle('active', ['overview','staff','cost','compare'][i] === tab);
   });
   // Update sidebar active state
   updateSidebarActive();
@@ -4733,8 +4715,6 @@ async function switchMgrTab(tab, month, channel) {
         api('GET', { action:'getDashboardPerformance', month, channel }),
       ]);
       renderMgrCompare(el, ovR.success?ovR.data:null, pfR.success?pfR.data:null, month);
-    } else if (tab === 'ai') {
-      renderDashAi(el, month, channel);
     }
   } catch(e) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối</div></div>';
@@ -4780,8 +4760,6 @@ function renderMgrOverview(el, over, perf, month, channel) {
     <div><div class="section-title" style="padding:12px 0 4px;">⚡ Hành động nhanh</div>
     <div style="display:flex;flex-direction:column;gap:8px;">
       <button class="btn btn-primary" onclick="switchMgrTab('compare','${month}','${channel}')">📈 So sánh kênh</button>
-      <button class="btn btn-outline" onclick="showDashTab('approval');loadDashboard();">✅ Phê duyệt (${s.cho_duyet||0} chờ)</button>
-      <button class="btn btn-secondary" onclick="switchMgrTab('ai','${month}','${channel}')">🤖 Phân tích AI</button>
     </div></div>
   </div>`;
   html += '<div class="spacer"></div></div>';
@@ -5335,7 +5313,7 @@ function renderSalesmanDashV2(el, plans, month) {
 function showDashTab(tab) {
   currentDashTab = tab;
   document.querySelectorAll('.dash-tab').forEach((el, i) => {
-    el.classList.toggle('active', ['overview','approval','performance','ai'][i] === tab);
+    el.classList.toggle('active', ['overview','approval','performance'][i] === tab);
   });
   loadDashboard();
 }
@@ -5408,13 +5386,7 @@ async function loadDashboard() {
     }
   }
 
-  // AI tab — manager only
-  if (currentDashTab === 'ai' && !isManager) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-text">AI Analysis chỉ dành cho Sales Manager</div></div>';
-    return;
-  }
-
-  if (currentDashTab === 'overview' || currentDashTab === 'performance' || currentDashTab === 'ai') {
+  if (currentDashTab === 'overview' || currentDashTab === 'performance') {
     if (isMarketing) {
       // Marketing: use full channel data
       try {
@@ -6028,100 +6000,6 @@ function renderDashPerformance(d, el) {
   el.innerHTML = html;
 }
 
-// AI ANALYSIS TAB
-const AI_OPTIONS = [
-  { key:'evaluate',  icon:'🔍', title:'Đánh giá hiệu quả',   titleEn:'Effectiveness',  desc:'Phân tích buổi tốt/kém', descEn:'Analyze best/worst events' },
-  { key:'trend',     icon:'📈', title:'Xu hướng',            titleEn:'Trend Analysis',  desc:'So sánh tháng, tìm pattern', descEn:'Month comparison & patterns' },
-  { key:'location',  icon:'🏪', title:'Điểm bán',            titleEn:'Top Locations',   desc:'Nơi nào nên tăng tần suất', descEn:'Where to increase frequency' },
-  { key:'sku',       icon:'🛒', title:'SKU phù hợp',         titleEn:'SKU Strategy',    desc:'SKU nào sampling hiệu quả', descEn:'Which SKUs perform best' },
-  { key:'budget',    icon:'💰', title:'Tối ưu ngân sách',    titleEn:'Budget Optimize', desc:'Phân bổ chi phí hợp lý', descEn:'Cost allocation analysis' },
-  { key:'summary',   icon:'📋', title:'Tóm tắt báo cáo',    titleEn:'Report Summary',  desc:'Tóm tắt nhanh cho BOD', descEn:'Quick summary for management' },
-  { key:'anomaly',   icon:'⚠️', title:'Phát hiện bất thường',titleEn:'Anomaly Detection',desc:'Dữ liệu bất thường', descEn:'Detect unusual patterns' },
-  { key:'improve',   icon:'💡', title:'Cải thiện',           titleEn:'Improvements',    desc:'Gợi ý cải thiện', descEn:'Improvement suggestions' },
-];
-
-let selectedAiOption = null;
-
-function renderDashAi(el, month, channel) {
-  const lv = currentLang === 'vi';
-  let html = `<div style="padding:12px 16px 4px;font-size:13px;color:var(--gray2);">
-    Chọn loại phân tích, AI sẽ đọc dữ liệu và đưa ra đánh giá chuyên sâu.
-  </div>
-  <div class="ai-option-grid">`;
-  AI_OPTIONS.forEach(opt => {
-    const sel = selectedAiOption === opt.key;
-    html += `<div class="ai-option ${sel?'selected':''}" onclick="selectAiOption('${opt.key}','${month}','${channel}')">
-      <div class="ai-option-icon">${opt.icon}</div>
-      <div class="ai-option-title">${lv?opt.title:opt.titleEn}</div>
-      <div class="ai-option-desc">${lv?opt.desc:opt.descEn}</div>
-    </div>`;
-  });
-  html += `</div>`;
-
-  if (selectedAiOption) {
-    html += `<div class="ai-result-box" id="ai-result">
-      <div class="ai-loading"><div class="ai-loader"></div><div>${lv?'Đang phân tích dữ liệu...':'Analyzing data...'}</div></div>
-    </div>`;
-  }
-  html += '<div class="spacer"></div>';
-  el.innerHTML = html;
-
-  if (selectedAiOption) {
-    runAiAnalysis(selectedAiOption, month, channel);
-  }
-}
-
-async function selectAiOption(key, month, channel) {
-  selectedAiOption = key;
-  renderDashAi(document.getElementById('dash-content'), month, channel);
-}
-
-async function runAiAnalysis(type, month, channel) {
-  const resultEl = document.getElementById('ai-result');
-  if (!resultEl) return;
-
-  try {
-    // Get data from backend
-    const dataRes = await api('GET', { action:'getDashboardAiData', month, channel, type });
-    if (!dataRes.success) { resultEl.innerHTML = '⚠️ Không lấy được dữ liệu.'; return; }
-
-    const d = dataRes.data;
-    const lv = currentLang === 'vi';
-
-    // Build AI prompt
-    const opt = AI_OPTIONS.find(o => o.key === type);
-    const promptMap = {
-      evaluate: `Phân tích hiệu quả các buổi sampling Ayam Brand. Dữ liệu: ${JSON.stringify(d.summary)}. Chi tiết từng buổi: ${JSON.stringify(d.events.slice(0,20))}. Hãy: 1) Xác định buổi hiệu quả nhất và kém nhất, 2) Phân tích nguyên nhân, 3) Đề xuất cải thiện. Trả lời bằng tiếng ${lv?'Việt':'Anh'}, ngắn gọn, có dấu đầu dòng.`,
-      trend:    `Phân tích xu hướng sampling Ayam Brand theo tháng. Dữ liệu trend: ${JSON.stringify(d.monthlyTrend)}. Tổng hợp: ${JSON.stringify(d.summary)}. Hãy: 1) Nhận xét xu hướng, 2) Tìm pattern, 3) Dự báo. Bằng tiếng ${lv?'Việt':'Anh'}.`,
-      location: `Đánh giá điểm bán sampling Ayam Brand. Dữ liệu: ${JSON.stringify(d.events.slice(0,20))}. Hãy: 1) Top điểm bán hiệu quả, 2) Điểm nên tăng tần suất, 3) Điểm nên cân nhắc lại. Bằng tiếng ${lv?'Việt':'Anh'}.`,
-      sku:      `Phân tích SKU sampling Ayam Brand (${lv?'VN':'EN'}). Data: ${JSON.stringify(d.events.slice(0,20))}. Cho biết: 1) SKU được sampling nhiều nhất, 2) SKU hiệu quả theo kênh MT/GT, 3) Gợi ý SKU nên focus.`,
-      budget:   `Phân tích chi phí sampling Ayam Brand. Tổng chi phí: ${fmtCurrency(d.summary.totalCost)} cho ${d.summary.totalEvents} buổi. Bằng tiếng ${lv?'Việt':'Anh'}: 1) Chi phí/người thử có hợp lý không, 2) Đề xuất tối ưu ngân sách, 3) So sánh hiệu quả theo kênh.`,
-      summary:  `Tạo tóm tắt báo cáo sampling Ayam Brand bằng tiếng ${lv?'Việt':'Anh'} cho Ban Giám Đốc. Kỳ: ${month||'tất cả'}. ${JSON.stringify(d.summary)}. Trend: ${JSON.stringify(d.monthlyTrend)}. Gồm: 1) Tổng quan, 2) Kết quả nổi bật, 3) Điểm cần cải thiện, 4) Đề xuất tháng tới. Formal, chuyên nghiệp.`,
-      anomaly:  `Phát hiện bất thường trong dữ liệu sampling Ayam Brand bằng tiếng ${lv?'Việt':'Anh'}. Data: ${JSON.stringify(d.events.slice(0,20))}. Tìm: 1) Mẫu sử dụng bất thường, 2) Doanh số quá thấp so kỳ vọng, 3) Chi phí bất thường, 4) Pattern đáng ngờ.`,
-      improve:  `Đề xuất cải thiện hoạt động sampling Ayam Brand bằng tiếng ${lv?'Việt':'Anh'}. ${JSON.stringify(d.summary)}. Dựa trên: hiệu quả hiện tại, chi phí, feedback. Đưa ra: 1) 3 cải thiện ngắn hạn (tháng tới), 2) 3 cải thiện trung hạn (quý tới), 3) KPI đề xuất.`,
-    };
-
-    // Call Claude API
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: promptMap[type] || promptMap.summary }],
-      }),
-    });
-    const aiData = await aiRes.json();
-    const text = aiData.content?.[0]?.text || 'Không có kết quả từ AI.';
-    resultEl.innerHTML = `<div style="white-space:pre-wrap;font-size:14px;line-height:1.75;">${text}</div>
-      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--gray3);font-size:11px;color:var(--gray2);">
-        🤖 Phân tích bởi Claude AI · Dữ liệu: ${d.summary.totalEvents} buổi · Kỳ: ${month || 'tất cả'}
-      </div>`;
-  } catch(err) {
-    resultEl.innerHTML = `<div style="color:var(--red);">⚠️ Lỗi AI: ${err.message}</div>`;
-  }
-}
-
 // =====================================================
 // MODAL
 // =====================================================
@@ -6308,7 +6186,7 @@ function showScreen(name) {
 
 (function init() {
   // ── PWA Version Check — force reload when new version deployed ──
-  const CURRENT_VERSION = '2.1.5';
+  const CURRENT_VERSION = '2.2.0';
   const storedVersion   = localStorage.getItem('dgm_app_version');
   if (storedVersion && storedVersion !== CURRENT_VERSION) {
     // New version detected — clear caches and reload
@@ -6321,17 +6199,9 @@ function showScreen(name) {
     return;
   }
   localStorage.setItem('dgm_app_version', CURRENT_VERSION);
-  // Prevent pull-to-refresh on mobile
+  // Prevent pull-to-refresh on mobile — use CSS only, keep touch passive for iOS scroll performance
   document.addEventListener('touchstart', function(e){}, {passive:true});
-  let lastY = 0;
-  document.addEventListener('touchmove', function(e) {
-    const y = e.touches[0].clientY;
-    const el = e.target.closest('.screen-content');
-    if (!el) { e.preventDefault(); return; }
-    const atTop = el.scrollTop === 0 && y > lastY;
-    if (atTop) e.preventDefault();
-    lastY = y;
-  }, {passive: false});
+  document.documentElement.style.overscrollBehavior = 'none';
 
   // Check session
   const saved = sessionStorage.getItem('dgm_user');
