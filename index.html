@@ -1365,6 +1365,23 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   color: var(--navy);
   box-shadow: 0 1px 4px rgba(0,0,0,0.10);
 }
+
+/* Manager mobile bottom nav */
+#mgr-bottom-nav { display: none; }
+body.mgr-mobile #mgr-bottom-nav { display: grid !important; }
+body.mgr-mobile .screen-content:not(.no-bottom-nav) { padding-bottom: 70px; }
+body.mgr-mobile #screen-home .screen-content { padding-bottom: 70px; }
+.mgr-nav-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 8px 4px 6px;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font); color: var(--gray2);
+  transition: color 0.15s; -webkit-tap-highlight-color: transparent;
+  min-height: 56px;
+}
+.mgr-nav-btn.active { color: var(--red); }
+.mgr-nav-icon  { font-size: 22px; line-height: 1; }
+.mgr-nav-label { font-size: 10px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -1588,6 +1605,34 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   </div>
 
 </div><!-- end #app -->
+
+<!-- MOBILE BOTTOM NAV — Manager/Marketing only, hidden on desktop -->
+<nav id="mgr-bottom-nav" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:200;
+  background:#fff;border-top:1px solid #e5e7eb;
+  display:none;grid-template-columns:repeat(4,1fr);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  box-shadow:0 -2px 10px rgba(0,0,0,0.08);">
+  <button class="mgr-nav-btn" onclick="mgrNavTap('home')" id="mnav-home">
+    <span class="mgr-nav-icon">🏠</span>
+    <span class="mgr-nav-label">Trang chủ</span>
+  </button>
+  <button class="mgr-nav-btn" onclick="mgrNavTap('plans')" id="mnav-plans">
+    <span class="mgr-nav-icon">📁</span>
+    <span class="mgr-nav-label">Kế hoạch</span>
+  </button>
+  <button class="mgr-nav-btn" id="mnav-approval" onclick="mgrNavTap('approval')" style="position:relative;">
+    <span class="mgr-nav-icon">✅</span>
+    <span class="mgr-nav-label">Phê duyệt</span>
+    <span id="mnav-approval-badge" style="display:none;position:absolute;top:6px;right:22%;
+      background:#C8102E;color:#fff;border-radius:10px;min-width:16px;height:16px;
+      font-size:10px;font-weight:700;padding:0 4px;
+      align-items:center;justify-content:center;line-height:1;">0</span>
+  </button>
+  <button class="mgr-nav-btn" onclick="mgrNavTap('dashboard')" id="mnav-dashboard">
+    <span class="mgr-nav-icon">📊</span>
+    <span class="mgr-nav-label">Dashboard</span>
+  </button>
+</nav>
 
 <script>
 // =====================================================
@@ -1966,6 +2011,7 @@ function buildSidebarNav() {
   // Apply desktop-mode class ONLY for Manager/Marketing on large screens
   const wantsDesktop = (isManager || isMarketing) && window.innerWidth >= 768;
   document.body.classList.toggle('desktop-mode', wantsDesktop);
+  document.body.classList.toggle('mgr-mobile', (isManager || isMarketing) && !wantsDesktop);
   sidebar.style.display = wantsDesktop ? 'flex' : 'none';
 
   // User info
@@ -2091,6 +2137,7 @@ function setupHome() {
     syncApprovalBadgeToSidebar();
   }, 1500);
   // Manager on desktop → go straight to dashboard
+  // Manager on mobile → stay on home screen (lighter), show bottom nav
   const isManagerRole2 = currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing';
   if (isManagerRole2 && isDesktop()) {
     setTimeout(() => {
@@ -2100,6 +2147,42 @@ function setupHome() {
       loadDashboard();
     }, 100);
   }
+  // Mobile manager: activate bottom nav tab state
+  if (isManagerRole2 && !isDesktop()) {
+    const homeBtn = document.getElementById('mnav-home');
+    if (homeBtn) homeBtn.classList.add('active');
+  }
+}
+
+function mgrNavTap(tab) {
+  // Update active state
+  ['home','plans','approval','dashboard'].forEach(k => {
+    const btn = document.getElementById('mnav-' + k);
+    if (btn) btn.classList.toggle('active', k === tab);
+  });
+  if (tab === 'home') {
+    showScreen('home');
+  } else if (tab === 'plans') {
+    showScreen('plans'); setTimeout(() => loadMyPlans(), 50);
+  } else if (tab === 'approval') {
+    // Show approval as a dedicated screen on mobile
+    showScreen('dashboard');
+    setupDashboardForRole();
+    mgrTab = 'approval_direct';
+    loadApprovalDirect();
+  } else if (tab === 'dashboard') {
+    showScreen('dashboard');
+    setupDashboardForRole();
+    mgrTab = 'overview';
+    loadDashboard();
+  }
+}
+
+function updateMgrNavBadge(count) {
+  const badge = document.getElementById('mnav-approval-badge');
+  if (!badge) return;
+  badge.textContent = count;
+  badge.style.display = count > 0 ? 'flex' : 'none';
 }
 
 async function syncApprovalBadgeToSidebar() {
@@ -2118,6 +2201,8 @@ async function syncApprovalBadgeToSidebar() {
     // Also update approval tab badge on mobile
     const tabBadge = document.getElementById('approval-tab-badge');
     if (tabBadge) { tabBadge.textContent = total; tabBadge.style.display = total > 0 ? 'flex' : 'none'; }
+    // Update manager mobile bottom nav badge
+    updateMgrNavBadge(total);
   } catch(e) {}
 }
 
