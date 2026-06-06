@@ -707,24 +707,23 @@ textarea.form-input { resize: none; min-height: 80px; }
 .img-upload-title {
   font-size: 13px; font-weight: 700; color: var(--navy);
   margin-bottom: 8px;
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
 .img-upload-title .required-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
 .img-upload-area {
+  display: block;
   border: 2px dashed var(--gray3);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 14px 16px;
   text-align: center;
   background: var(--gray4);
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
-  position: relative;
-  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .img-upload-area:active { border-color: var(--red); background: var(--red-light); }
-.img-upload-area input[type=file] {
-  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
-}
+.img-upload-area input[type=file] { display: none; }
 .img-upload-icon { font-size: 28px; margin-bottom: 6px; }
 .img-upload-text { font-size: 13px; color: var(--gray2); }
 .img-count { font-size: 11px; color: var(--teal); font-weight: 600; margin-top: 4px; }
@@ -3705,13 +3704,27 @@ function initReport(planId) {
   const locLabel = cachedPlan ? `${cachedPlan.locationName} · ${fmtDate(cachedPlan.date)}` : planId;
   document.getElementById('report-plan-id').textContent = locLabel;
   document.getElementById('report-plan-id').dataset.planId = planId;
-  renderReportForm(planId);
+
+  // Detect if this user has already submitted a report for this plan
+  const existingReports = (cachedPlan && cachedPlan.reports) || [];
+  const myPrevReports = existingReports.filter(r => String(r.reporter) === String(currentUser.code));
+  const isFirstReport = myPrevReports.length === 0;
+
+  renderReportForm(planId, isFirstReport);
   showScreen('report');
 }
 
-function renderReportForm(planId) {
+function renderReportForm(planId, isFirstReport = true) {
+  const firstNote = isFirstReport
+    ? ''
+    : `<div style="background:#e8f5e9;border-left:4px solid var(--green);border-radius:0 8px 8px 0;padding:10px 14px;margin:0 16px 8px;font-size:12px;color:#2e7d32;font-weight:600;">
+        ✅ Báo cáo bổ sung — Tất cả hình ảnh là <b>không bắt buộc</b> lần này
+      </div>`;
+
   document.getElementById('report-content').innerHTML = `
     <div class="spacer" style="height:8px;"></div>
+
+    ${firstNote}
 
     <!-- TIMEMARK NOTICE -->
     <div class="timemark-notice" style="margin:0 16px 12px;">
@@ -3720,12 +3733,12 @@ function renderReportForm(planId) {
 
     <!-- IMAGE UPLOADS -->
     <div class="form-section">
-      <div class="form-section-header">📸 Hình ảnh báo cáo</div>
+      <div class="form-section-header">📸 Hình ảnh báo cáo ${isFirstReport ? '' : '<span style="font-size:11px;font-weight:400;opacity:0.8;">(tất cả optional)</span>'}</div>
       <div class="form-section-body">
-        ${imageUploadBlock('imgLocation', '1. Hình chụp tên địa điểm sampling', true, 3)}
-        ${imageUploadBlock('imgFood', '2. Hình chụp món ăn (từ trên xuống)', true, 5)}
-        ${imageUploadBlock('imgOverview', '3. Hình toàn cảnh (nhân viên + booth + đồng phục)', true, 5)}
-        ${imageUploadBlock('imgOther', '4. Hình ảnh khác', false, 27)}
+        ${imageUploadBlock('imgLocation', '1. Hình chụp tên địa điểm sampling', isFirstReport, 10)}
+        ${imageUploadBlock('imgFood',     '2. Hình chụp món ăn (từ trên xuống)', isFirstReport, 20)}
+        ${imageUploadBlock('imgOverview', '3. Hình toàn cảnh (nhân viên + booth + đồng phục)', isFirstReport, 20)}
+        ${imageUploadBlock('imgOther',    '4. Hình ảnh khác', false, 40)}
       </div>
     </div>
 
@@ -3735,7 +3748,7 @@ function renderReportForm(planId) {
       <div class="form-section-body">
         <div class="form-row">
           <div class="form-field">
-            <label class="required">Số người thử (ước tính)</label>
+            <label class="${isFirstReport ? 'required' : ''}">Số người thử (ước tính)</label>
             <input class="form-input" type="number" id="r-tasters" min="0" placeholder="85" inputmode="numeric">
           </div>
           <div class="form-field">
@@ -3778,25 +3791,30 @@ function renderReportForm(planId) {
     <div class="spacer"></div>
   `;
 
+  // Store isFirstReport for submitReport validation
+  reportFormData._isFirstReport = isFirstReport;
+
   // Load approved samples
   loadApprovedSamplesForReport(planId);
 }
 
 function imageUploadBlock(key, title, required, maxAdd) {
+  const reqDot = required ? '<div class="required-dot"></div>' : '';
+  const optTag = !required ? '<span style="font-size:10px;background:var(--gray3);color:var(--gray2);border-radius:4px;padding:1px 6px;font-weight:600;">Tùy chọn</span>' : '';
   return `
     <div class="img-upload-section">
       <div class="img-upload-title">
-        ${required ? '<div class="required-dot"></div>' : ''}
-        ${title}
-        <span class="small text-gray">(tối đa ${maxAdd} ảnh)</span>
+        ${reqDot}${title} ${optTag}
+        <span class="small text-gray" style="margin-left:auto;" id="count-${key}">0 / ${maxAdd} ảnh</span>
       </div>
-      <div class="img-upload-area" id="upload-area-${key}">
-        <input type="file" accept="image/*" multiple onchange="handleImageSelect(event,'${key}',${maxAdd})">
+      <div class="img-preview-grid" id="preview-${key}" style="min-height:0;"></div>
+      <label class="img-upload-area" id="upload-area-${key}" style="cursor:pointer;margin-top:6px;">
+        <input type="file" accept="image/*" capture="environment" style="display:none;"
+          onchange="handleImageSelect(event,'${key}',${maxAdd})">
         <div class="img-upload-icon">📷</div>
-        <div class="img-upload-text">Nhấn để chọn ảnh</div>
-        <div class="img-count" id="count-${key}">0 / ${maxAdd} ảnh</div>
-      </div>
-      <div class="img-preview-grid" id="preview-${key}"></div>
+        <div class="img-upload-text">Chụp / Chọn ảnh</div>
+        <div class="small text-gray" style="margin-top:2px;">Nhấn nhiều lần để thêm nhiều ảnh</div>
+      </label>
     </div>`;
 }
 
@@ -3829,28 +3847,63 @@ async function loadApprovedSamplesForReport(planId) {
   } catch(e) {}
 }
 
-// Image handling — compress before preview
 async function handleImageSelect(event, key, maxAdd) {
   const files = Array.from(event.target.files);
-  const current = reportFormData[key].length;
+  if (!files.length) return;
+
+  const current   = reportFormData[key].length;
   const remaining = maxAdd - current;
+  if (remaining <= 0) {
+    showToast(`Đã đạt tối đa ${maxAdd} ảnh cho mục này`, 'error');
+    event.target.value = '';
+    return;
+  }
+
   const toProcess = files.slice(0, remaining);
-  const countEl = document.getElementById(`count-${key}`);
+  const countEl   = document.getElementById(`count-${key}`);
   const previewEl = document.getElementById(`preview-${key}`);
+
+  // Show processing indicator
+  const processingId = `processing-${key}-${Date.now()}`;
+  const processingEl = document.createElement('div');
+  processingEl.id = processingId;
+  processingEl.style.cssText = 'font-size:11px;color:var(--gray2);padding:4px 0;';
+  processingEl.textContent = `⏳ Đang xử lý ${toProcess.length} ảnh...`;
+  previewEl.appendChild(processingEl);
 
   for (const file of toProcess) {
     const compressed = await compressImage(file, TARGET_IMG_KB);
     reportFormData[key].push({ dataUrl: compressed.dataUrl, name: file.name, size: compressed.size });
+    const idx  = reportFormData[key].length - 1;
     const item = document.createElement('div');
     item.className = 'img-preview-item';
-    item.innerHTML = `<img src="${compressed.dataUrl}"><div class="img-remove" onclick="removeImage('${key}',${reportFormData[key].length-1},this.parentElement)">×</div>`;
-    previewEl.appendChild(item);
+    item.innerHTML = `
+      <img src="${compressed.dataUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:6px;">
+      <div class="img-remove" onclick="removeImage('${key}',${idx},this.parentElement)">×</div>
+      <div style="font-size:9px;color:var(--gray2);margin-top:2px;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${Math.round(compressed.size)}KB</div>`;
+    previewEl.insertBefore(item, processingEl);
   }
+
+  // Remove processing indicator
+  processingEl.remove();
+
   if (countEl) countEl.textContent = `${reportFormData[key].length} / ${maxAdd} ảnh`;
+
+  // Reset input so same file can be re-selected
   event.target.value = '';
 
   if (files.length > remaining) {
     showToast(`Chỉ thêm được ${remaining} ảnh nữa (tối đa ${maxAdd})`, 'error');
+  }
+
+  // Update upload area appearance
+  const areaEl = document.getElementById(`upload-area-${key}`);
+  if (areaEl && reportFormData[key].length >= maxAdd) {
+    areaEl.style.opacity = '0.5';
+    areaEl.querySelector('.img-upload-text').textContent = 'Đã đủ ảnh';
+  } else if (areaEl) {
+    areaEl.style.opacity = '1';
+    areaEl.querySelector('.img-upload-text').textContent = 'Chụp / Chọn ảnh';
   }
 }
 
@@ -3915,10 +3968,16 @@ async function submitReport() {
     imgOther:      reportFormData.imgOther.map(i => i.name),
   };
 
-  if (reportFormData.imgLocation.length === 0) { showToast('Bắt buộc có hình tên địa điểm', 'error'); return; }
-  if (reportFormData.imgFood.length === 0)     { showToast('Bắt buộc có hình món ăn', 'error'); return; }
-  if (reportFormData.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
-  if (!data.actualTasters)                     { showToast('Vui lòng nhập số người thử', 'error'); return; }
+  const isFirst = reportFormData._isFirstReport !== false; // default true
+  if (isFirst && reportFormData.imgLocation.length === 0) { showToast('Bắt buộc có hình tên địa điểm', 'error'); return; }
+  if (isFirst && reportFormData.imgFood.length === 0)     { showToast('Bắt buộc có hình món ăn', 'error'); return; }
+  if (isFirst && reportFormData.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
+  if (isFirst && !data.actualTasters)                     { showToast('Vui lòng nhập số người thử', 'error'); return; }
+  // Subsequent reports: at least 1 photo OR tasters required
+  if (!isFirst && reportFormData.imgLocation.length === 0 && reportFormData.imgFood.length === 0 &&
+      reportFormData.imgOverview.length === 0 && reportFormData.imgOther.length === 0 && !data.actualTasters) {
+    showToast('Vui lòng nhập ít nhất số người thử hoặc 1 hình ảnh', 'error'); return;
+  }
 
   btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
   loading(true, 'Đang lưu báo cáo...');
