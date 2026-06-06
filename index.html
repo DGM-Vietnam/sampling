@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.2.0">
+<meta name="version" content="2.2.1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -887,6 +887,11 @@ textarea.form-input { resize: none; min-height: 80px; }
 .approval-actions .btn { flex: 1; padding: 10px 8px; font-size: 13px; }
 /* Loading spinner (used across all tabs) */
 .ai-loader { width: 32px; height: 32px; border: 3px solid var(--gray3); border-top-color: var(--red); border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+/* Channel matrix table */
+.matrix-table { width: 100%; border-collapse: collapse; }
+.matrix-table tbody tr:hover td { background: var(--red-light) !important; }
+.matrix-table tbody tr:hover td:first-child { background: #f5d0d5 !important; }
 
 .filter-row { display: flex; gap: 8px; padding: 12px 16px 0; }
 .filter-row select { flex: 1; }
@@ -2047,7 +2052,7 @@ function buildSidebarNav() {
       screen: 'dashboard', key: 'cost',
     });
     items.push({
-      icon: '📈', label: 'So sánh',
+      icon: '📋', label: 'Theo kênh',
       action: () => { showScreen('dashboard'); setupDashboardForRole(); mgrTab='compare'; loadDashboard(); },
       screen: 'dashboard', key: 'compare',
     });
@@ -4648,7 +4653,7 @@ async function loadManagerDashboard(el, month, channel) {
         <button class="mgr-tab active"  onclick="switchMgrTab('overview','${month}','${channel}')">📊 Tổng quan</button>
         <button class="mgr-tab"         onclick="switchMgrTab('staff',   '${month}','${channel}')">👥 Nhân sự</button>
         <button class="mgr-tab"         onclick="switchMgrTab('cost',    '${month}','${channel}')">💰 Chi phí</button>
-        <button class="mgr-tab"         onclick="switchMgrTab('compare', '${month}','${channel}')">📈 So sánh</button>
+        <button class="mgr-tab"         onclick="switchMgrTab('compare', '${month}','${channel}')">📋 Theo kênh</button>
       </div>
       <div id="mgr-content"><div class="empty-state"><div class="ai-loader"></div></div></div>
     </div>`;
@@ -4759,7 +4764,7 @@ function renderMgrOverview(el, over, perf, month, channel) {
     <div><div class="section-title" style="padding:12px 0 4px;">📦 Top SKU</div><div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:10px;">${buildSkuUsage(over?over.topSkus:null,masterData.products)}</div></div>
     <div><div class="section-title" style="padding:12px 0 4px;">⚡ Hành động nhanh</div>
     <div style="display:flex;flex-direction:column;gap:8px;">
-      <button class="btn btn-primary" onclick="switchMgrTab('compare','${month}','${channel}')">📈 So sánh kênh</button>
+      <button class="btn btn-primary" onclick="switchMgrTab('compare','${month}','${channel}')">📋 Xem theo kênh</button>
     </div></div>
   </div>`;
   html += '<div class="spacer"></div></div>';
@@ -4870,59 +4875,179 @@ function renderMgrCost(el, over, month) {
   el.innerHTML = html;
 }
 
+// =====================================================
+// THEO KÊNH — Channel Matrix Table (replaces Compare)
+// =====================================================
 function renderMgrCompare(el, over, perf, month) {
-  const cb = over ? over.channelBreakdown||{} : {};
-  const e  = over ? over.effectiveness||{}   : {};
+  const cb       = over ? over.channelBreakdown ||{} : {};
+  const s        = over ? over.statusBreakdown  ||{} : {};
+  const e        = over ? over.effectiveness    ||{} : {};
   const channels = Object.keys(cb);
 
-  let html = '<div style="padding:8px 0 0;" class="fade-in">';
-  if (channels.length > 0) {
-    html += sectionTitle('📊 Hiệu quả theo kênh');
-    html += '<div class="compare-grid">';
-    channels.sort((a,b)=>(cb[b].tasters||0)-(cb[a].tasters||0)).forEach(ch => {
-      const data = cb[ch];
-      const eff = data.count>0&&e.avgTastersPerEvent>0?Math.round((data.tasters/data.count)/e.avgTastersPerEvent*100):0;
-      const cls = eff>=100?'best':eff>=70?'warn':'poor';
-      html += `<div class="compare-card ${cls}"><div class="compare-channel">${ch}</div><div class="compare-pct ${cls}">${eff}%</div><div class="compare-sub">vs avg · ${data.count} buổi</div><div class="compare-sub" style="margin-top:3px;">${fmtNum(data.tasters)} người</div><div class="compare-sub">${fmtCurrency(data.cost||0)}</div></div>`;
+  // Channel display order
+  const CH_ORDER = ['MT','GT South','GT Central','GT North'];
+  const sorted   = [...CH_ORDER.filter(c => cb[c]), ...channels.filter(c => !CH_ORDER.includes(c))];
+
+  // Compute totals across all channels from channelBreakdown
+  const tot = sorted.reduce((acc, ch) => {
+    const d = cb[ch] || {};
+    acc.total    += d.count       || 0;
+    acc.cho_duyet+= d.cho_duyet   || 0;
+    acc.da_duyet += d.da_duyet    || 0;
+    acc.hoan_thanh+=d.hoan_thanh  || 0;
+    acc.tu_choi  += d.tu_choi     || 0;
+    acc.tasters  += d.tasters     || 0;
+    acc.sales    += d.sales       || 0;
+    acc.cost     += d.cost        || 0;
+    acc.pg       += d.costPg      || 0;
+    acc.location += d.costLocation|| 0;
+    acc.gifts    += d.costGifts   || 0;
+    return acc;
+  }, { total:0, cho_duyet:0, da_duyet:0, hoan_thanh:0, tu_choi:0,
+       tasters:0, sales:0, cost:0, pg:0, location:0, gifts:0 });
+
+  // --- helpers ---
+  const th  = (txt, align='right') => `<th style="text-align:${align};padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray2);white-space:nowrap;background:var(--gray4);border-bottom:2px solid var(--gray3);">${txt}</th>`;
+  const td  = (txt, bold=false, color='', bg='') =>
+    `<td style="text-align:right;padding:7px 10px;font-size:12px;${bold?'font-weight:700;':''}${color?`color:${color};`:''}${bg?`background:${bg};`:''}white-space:nowrap;border-bottom:1px solid var(--gray3);">${txt}</td>`;
+  const tdL = (txt, bold=false) =>
+    `<td style="text-align:left;padding:7px 10px;font-size:12px;font-weight:${bold?700:600};white-space:nowrap;border-bottom:1px solid var(--gray3);${bold?'background:var(--gray4);':''}position:sticky;left:0;background:${bold?'var(--gray4)':'var(--white)'};z-index:1;">${txt}</td>`;
+
+  // --- Section 1: Trạng thái buổi sampling ---
+  let statusRows = '';
+  const statusDefs = [
+    { key:'total',     label:'Tổng buổi',   color:'var(--navy)',   fn: d => d.count||0 },
+    { key:'cho_duyet', label:'Chờ duyệt',   color:'var(--yellow2)',fn: d => d.cho_duyet||0 },
+    { key:'da_duyet',  label:'Đã duyệt',    color:'var(--green)',  fn: d => d.da_duyet||0 },
+    { key:'hoan_thanh',label:'Hoàn thành',  color:'var(--teal)',   fn: d => d.hoan_thanh||0 },
+    { key:'tu_choi',   label:'Từ chối',     color:'var(--red)',    fn: d => d.tu_choi||0 },
+  ];
+  statusDefs.forEach(row => {
+    const vals = sorted.map(ch => {
+      const v = row.fn(cb[ch]||{});
+      return td(v===0?'—':v, false, v>0?row.color:'var(--gray2)');
     });
-    html += '</div>';
+    const totV = row.key==='total'?tot.total:row.key==='cho_duyet'?tot.cho_duyet:row.key==='da_duyet'?tot.da_duyet:row.key==='hoan_thanh'?tot.hoan_thanh:tot.tu_choi;
+    statusRows += `<tr>${tdL(row.label)}${vals.join('')}${td(totV===0?'—':totV,true,row.color)}</tr>`;
+  });
+
+  // --- Section 2: Hiệu quả ---
+  const effRows = [
+    { label:'Người thử', fn: d => fmtNum(d.tasters||0),         totVal: fmtNum(tot.tasters), color:'' },
+    { label:'TB/buổi',   fn: d => { const c=d.count||0; return c>0?fmtNum(Math.round((d.tasters||0)/c)):'—'; }, totVal: (tot.total>0?fmtNum(Math.round(tot.tasters/tot.total)):'—'), color:'' },
+    { label:'Doanh số',  fn: d => fmtCurrency(d.sales||0),      totVal: fmtCurrency(tot.sales), color:'var(--teal)' },
+    { label:'CP/người',  fn: d => { const t=d.tasters||0; return t>0?fmtCurrency(Math.round((d.cost||0)/t)):'—'; }, totVal: (tot.tasters>0?fmtCurrency(Math.round(tot.cost/tot.tasters)):'—'), color:'' },
+  ].map(row => {
+    const vals = sorted.map(ch => td(row.fn(cb[ch]||{}), false, row.color));
+    return `<tr>${tdL(row.label)}${vals.join('')}${td(row.totVal,true,row.color)}</tr>`;
+  }).join('');
+
+  // --- Section 3: Chi phí ---
+  const costDefs = [
+    { label:'Tổng CP',      fn: d => fmtCurrency(d.cost||0),        totVal: fmtCurrency(tot.cost),     color:'var(--red)' },
+    { label:'CP PG',        fn: d => fmtCurrency(d.costPg||0),      totVal: fmtCurrency(tot.pg),       color:'' },
+    { label:'CP Địa điểm',  fn: d => fmtCurrency(d.costLocation||0),totVal: fmtCurrency(tot.location), color:'' },
+    { label:'Quà tặng',     fn: d => fmtCurrency(d.costGifts||0),   totVal: fmtCurrency(tot.gifts),    color:'' },
+  ].map(row => {
+    const vals = sorted.map(ch => td(row.fn(cb[ch]||{}), false, row.color));
+    return `<tr>${tdL(row.label)}${vals.join('')}${td(row.totVal,true,row.color)}</tr>`;
+  }).join('');
+
+  // --- Monthly trend table ---
+  let trendTable = '';
+  if (over && over.monthlyTrend && over.monthlyTrend.length > 0) {
+    const t6 = over.monthlyTrend.slice(-6);
+    const trendRows = t6.map((m, i) => {
+      const isLast = i === t6.length - 1;
+      return `<tr style="${isLast?'font-weight:700;background:var(--gray4);':''}">
+        <td style="padding:7px 10px;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--gray3);position:sticky;left:0;background:${isLast?'var(--gray4)':'var(--white)'};">${m.month.substring(5,7)}/${m.month.substring(2,4)}</td>
+        <td style="text-align:right;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--gray3);">${m.events||0}</td>
+        <td style="text-align:right;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--gray3);color:var(--teal);">${fmtNum(m.tasters)}</td>
+        <td style="text-align:right;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--gray3);">${fmtCurrency(m.sales)}</td>
+        <td style="text-align:right;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--gray3);color:var(--red);">${fmtCurrency(m.cost)}</td>
+      </tr>`;
+    }).join('');
+    trendTable = `
+      <div style="padding:4px 16px 0;">
+        <div class="section-title" style="padding:12px 0 6px;">📅 Xu hướng theo tháng</div>
+        <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;">
+          <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+            <table style="width:100%;border-collapse:collapse;min-width:360px;">
+              <thead><tr>
+                ${th('Tháng','left')}
+                ${th('Buổi')}
+                ${th('Người thử')}
+                ${th('Doanh số')}
+                ${th('Chi phí')}
+              </tr></thead>
+              <tbody>${trendRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>`;
   }
-  if (perf && perf.items && perf.items.length > 0) {
-    const done = perf.items.filter(p=>p.status==='hoan_thanh');
-    if (done.length > 0) {
-      const avgTR = Math.round(done.reduce((s,p)=>s+(p.tasterRate||0),0)/done.length);
-      const avgSR = Math.round(done.reduce((s,p)=>s+(p.salesRate||0),0)/done.length);
-      html += `<div class="dash-desktop-grid" style="padding:4px 16px 0;">
-        <div><div class="section-title" style="padding:12px 0 4px;">📋 Plan vs Thực tế (TB)</div>
-        <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;">
-          <div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span>Người thử</span><span style="color:${avgTR>=100?'var(--green)':avgTR>=70?'var(--yellow2)':'var(--red)'};">${avgTR}%</span></div><div class="bar-track" style="height:10px;"><div class="bar-fill" style="height:100%;width:${Math.min(avgTR,100)}%;background:${avgTR>=100?'var(--green)':avgTR>=70?'var(--yellow2)':'var(--red)'};"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span>Doanh số</span><span style="color:var(--teal);">${avgSR}%</span></div><div class="bar-track" style="height:10px;"><div class="bar-fill" style="height:100%;width:${Math.min(avgSR,100)}%;background:var(--teal);"></div></div></div>
-          <div style="font-size:11px;color:var(--gray2);margin-top:10px;">${done.length} buổi hoàn thành</div>
-        </div></div>`;
-      if (channels.length > 0) {
-        html += `<div><div class="section-title" style="padding:12px 0 4px;">🧮 CP/người thử theo kênh</div>
-        <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;">`;
-        const maxCPC = Math.max(...channels.map(ch=>cb[ch].tasters>0?(cb[ch].cost||0)/cb[ch].tasters:0),1);
-        channels.forEach(ch=>{const cpc=cb[ch].tasters>0?Math.round((cb[ch].cost||0)/cb[ch].tasters):0;html+=`<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px;"><span>${ch}</span><span>${fmtCurrency(cpc)}/người</span></div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(cpc/maxCPC*100)}%;background:${cpc<=10000?'var(--green)':cpc<=20000?'var(--yellow2)':'var(--red)'};"></div></div></div>`;});
-        html += '</div></div>';
-      }
-      html += '</div>';
+
+  // --- Insight row ---
+  let insight = '';
+  if (sorted.length > 1) {
+    const bestCh  = sorted.slice().sort((a,b)=>(cb[b].tasters||0)-(cb[a].tasters||0))[0];
+    const worstCh = sorted.slice().sort((a,b)=>(cb[a].tasters||0)-(cb[b].tasters||0))[0];
+    if (bestCh) insight += `<div class="insight-card green"><div class="insight-title">✅ Kênh nhiều khách nhất: ${bestCh}</div><div class="insight-text">${cb[bestCh].count||0} buổi · ${fmtNum(cb[bestCh].tasters||0)} người thử</div></div>`;
+    if (worstCh && worstCh !== bestCh) insight += `<div class="insight-card yellow"><div class="insight-title">📈 Kênh cần chú ý: ${worstCh}</div><div class="insight-text">Hiệu quả thấp hơn bình quân — xem xét điều chỉnh</div></div>`;
+    if ((tot.cho_duyet||0) > 3) insight += `<div class="insight-card"><div class="insight-title">⏳ ${tot.cho_duyet} buổi đang chờ duyệt</div><div class="insight-text">Nên duyệt sớm để team chuẩn bị kịp thời</div></div>`;
+  }
+
+  // --- Assemble ---
+  const colHdrs = sorted.map(ch => th(ch)).join('') + th('Tổng','right');
+  const sectionHdr = (icon, label) => `
+    <tr><td colspan="${sorted.length+2}" style="padding:10px 10px 4px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--gray2);background:var(--gray4);border-bottom:1px solid var(--gray3);">${icon} ${label}</td></tr>`;
+
+  const noData = sorted.length === 0;
+
+  let html = `<div style="padding:8px 0 0;" class="fade-in">`;
+
+  if (noData) {
+    html += `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có dữ liệu kênh</div><div class="empty-sub">Thử chọn tháng khác</div></div>`;
+  } else {
+    // Month label
+    const mLabel = month ? `Tháng ${month.substring(5,7)}/${month.substring(0,4)}` : 'Tất cả tháng';
+    html += `<div style="padding:10px 16px 4px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-size:13px;font-weight:700;color:var(--navy);">Bảng thống kê theo kênh</div>
+      <div style="font-size:11px;color:var(--gray2);background:var(--gray4);padding:3px 10px;border-radius:20px;">${mLabel}</div>
+    </div>`;
+
+    // Main matrix table
+    html += `<div style="padding:0 16px 4px;">
+      <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;">
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+          <table style="width:100%;border-collapse:collapse;min-width:${sorted.length*90+140}px;">
+            <thead><tr>
+              ${th('Chỉ số','left')}
+              ${colHdrs}
+            </tr></thead>
+            <tbody>
+              ${sectionHdr('📌','Trạng thái buổi')}
+              ${statusRows}
+              ${sectionHdr('👥','Hiệu quả')}
+              ${effRows}
+              ${sectionHdr('💰','Chi phí')}
+              ${costDefs}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+
+    html += trendTable;
+
+    if (insight) {
+      html += `<div style="padding:4px 16px 0;">
+        <div class="section-title" style="padding:12px 0 6px;">💡 Nhận định</div>
+        ${insight}
+      </div>`;
     }
   }
-  if (over && over.monthlyTrend && over.monthlyTrend.length > 1) {
-    const t6 = over.monthlyTrend.slice(-6);
-    html += sectionTitle('📈 Bảng so sánh 6 tháng');
-    html += `<div class="card" style="margin:0 16px 12px;"><div class="card-body"><div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">
-      <thead><tr style="border-bottom:1px solid var(--gray3);"><th style="text-align:left;padding:6px 0;font-weight:700;color:var(--gray2);">Tháng</th><th style="text-align:right;padding:6px 0;font-weight:700;color:var(--gray2);">Buổi</th><th style="text-align:right;padding:6px 0;font-weight:700;color:var(--gray2);">Người thử</th><th style="text-align:right;padding:6px 0;font-weight:700;color:var(--gray2);">Doanh số</th></tr></thead>
-      <tbody>${t6.map((m,i)=>`<tr style="border-bottom:1px solid var(--gray3);${i===t6.length-1?'font-weight:700;':''}"><td style="padding:7px 0;">${m.month.substring(5,7)}/${m.month.substring(2,4)}</td><td style="text-align:right;padding:7px 0;">${m.events}</td><td style="text-align:right;padding:7px 0;">${fmtNum(m.tasters)}</td><td style="text-align:right;padding:7px 0;color:var(--teal);">${fmtCurrency(m.sales)}</td></tr>`).join('')}</tbody>
-    </table></div></div></div>`;
-  }
-  html += sectionTitle('💡 Nhận định');
-  const best = channels.sort((a,b)=>(cb[b].tasters||0)-(cb[a].tasters||0))[0];
-  const worst= channels[channels.length-1];
-  if (best) html += `<div class="insight-card green"><div class="insight-title">✅ Kênh tốt nhất: ${best}</div><div class="insight-text">${cb[best].count} buổi · ${fmtNum(cb[best].tasters||0)} người · Duy trì & tăng tần suất</div></div>`;
-  if (worst&&worst!==best) html += `<div class="insight-card yellow"><div class="insight-title">📈 Cần cải thiện: ${worst}</div><div class="insight-text">Thấp hơn mức bình quân — xem xét điều chỉnh chiến lược</div></div>`;
-  if ((over&&over.statusBreakdown&&over.statusBreakdown.cho_duyet||0)>3) html += `<div class="insight-card"><div class="insight-title">⏳ Nhiều kế hoạch chờ duyệt</div><div class="insight-text">Nên duyệt sớm để team có đủ thời gian chuẩn bị</div></div>`;
+
   html += '<div class="spacer"></div></div>';
   el.innerHTML = html;
 }
@@ -6186,7 +6311,7 @@ function showScreen(name) {
 
 (function init() {
   // ── PWA Version Check — force reload when new version deployed ──
-  const CURRENT_VERSION = '2.2.0';
+  const CURRENT_VERSION = '2.2.1';
   const storedVersion   = localStorage.getItem('dgm_app_version');
   if (storedVersion && storedVersion !== CURRENT_VERSION) {
     // New version detected — clear caches and reload
