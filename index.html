@@ -6,7 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.1.4">
+<meta name="version" content="2.1.5">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#C8102E">
@@ -6221,6 +6222,20 @@ function showScreen(name) {
 }
 
 (function init() {
+  // ── PWA Version Check — force reload when new version deployed ──
+  const CURRENT_VERSION = '2.1.5';
+  const storedVersion   = localStorage.getItem('dgm_app_version');
+  if (storedVersion && storedVersion !== CURRENT_VERSION) {
+    // New version detected — clear caches and reload
+    localStorage.setItem('dgm_app_version', CURRENT_VERSION);
+    // Clear all caches if Cache API available
+    if ('caches' in window) {
+      caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+    }
+    window.location.reload(true); // hard reload
+    return;
+  }
+  localStorage.setItem('dgm_app_version', CURRENT_VERSION);
   // Prevent pull-to-refresh on mobile
   document.addEventListener('touchstart', function(e){}, {passive:true});
   let lastY = 0;
