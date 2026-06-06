@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="version" content="2.1.4">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#C8102E">
@@ -3803,6 +3807,9 @@ function imageUploadBlock(key, title, required, maxAdd) {
   const optTag = !required
     ? '<span style="font-size:10px;background:var(--gray3);color:var(--gray2);border-radius:4px;padding:1px 6px;font-weight:600;">Tùy chọn</span>'
     : '';
+  // iOS-safe pattern: <label> directly wraps visible UI + hidden input inside same label
+  // iOS Safari respects label→input association when input is a direct child of the tapped label
+  // Key: input must NOT use display:none — use opacity:0 + size:0 + position:absolute within label
   return `
     <div class="img-upload-section">
       <div class="img-upload-title">
@@ -3810,23 +3817,17 @@ function imageUploadBlock(key, title, required, maxAdd) {
         <span class="small text-gray" style="margin-left:auto;" id="count-${key}">0 / ${maxAdd} ảnh</span>
       </div>
       <div class="img-preview-grid" id="preview-${key}" style="min-height:0;"></div>
-      <div style="position:relative;margin-top:6px;">
-        <!-- File input overlays button exactly — iOS requires visible, in-viewport input -->
+      <label id="upload-area-${key}" class="img-upload-area" style="display:block;margin-top:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;">
+        <span class="img-upload-icon">📷</span>
+        <span class="img-upload-text" id="upload-text-${key}" style="display:block;margin-top:4px;">Chụp / Chọn từ thư viện</span>
+        <span style="display:block;font-size:11px;color:var(--gray2);margin-top:2px;">Nhấn nhiều lần để thêm nhiều ảnh</span>
         <input type="file"
           id="file-input-${key}"
           accept="image/*"
           multiple
-          style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;"
+          style="width:0.1px;height:0.1px;opacity:0;overflow:hidden;position:absolute;"
           onchange="handleImageSelect(event,'${key}',${maxAdd})">
-        <button type="button"
-          class="img-upload-area"
-          id="upload-area-${key}"
-          style="width:100%;border:none;background:var(--gray4);pointer-events:none;">
-          <div class="img-upload-icon">📷</div>
-          <div class="img-upload-text" id="upload-text-${key}">Chụp / Chọn từ thư viện</div>
-          <div class="small text-gray" style="margin-top:2px;">Nhấn nhiều lần để thêm nhiều ảnh</div>
-        </button>
-      </div>
+      </label>
     </div>`;
 }
 
