@@ -3809,7 +3809,7 @@ function imageUploadBlock(key, title, required, maxAdd) {
       </div>
       <div class="img-preview-grid" id="preview-${key}" style="min-height:0;"></div>
       <label class="img-upload-area" id="upload-area-${key}" style="cursor:pointer;margin-top:6px;">
-        <input type="file" accept="image/*" capture="environment" style="display:none;"
+        <input type="file" accept="image/*" multiple style="display:none;"
           onchange="handleImageSelect(event,'${key}',${maxAdd})">
         <div class="img-upload-icon">📷</div>
         <div class="img-upload-text">Chụp / Chọn ảnh</div>
