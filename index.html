@@ -3800,7 +3800,9 @@ function renderReportForm(planId, isFirstReport = true) {
 
 function imageUploadBlock(key, title, required, maxAdd) {
   const reqDot = required ? '<div class="required-dot"></div>' : '';
-  const optTag = !required ? '<span style="font-size:10px;background:var(--gray3);color:var(--gray2);border-radius:4px;padding:1px 6px;font-weight:600;">Tùy chọn</span>' : '';
+  const optTag = !required
+    ? '<span style="font-size:10px;background:var(--gray3);color:var(--gray2);border-radius:4px;padding:1px 6px;font-weight:600;">Tùy chọn</span>'
+    : '';
   return `
     <div class="img-upload-section">
       <div class="img-upload-title">
@@ -3808,22 +3810,23 @@ function imageUploadBlock(key, title, required, maxAdd) {
         <span class="small text-gray" style="margin-left:auto;" id="count-${key}">0 / ${maxAdd} ảnh</span>
       </div>
       <div class="img-preview-grid" id="preview-${key}" style="min-height:0;"></div>
-      <!-- Hidden file input — triggered programmatically for iOS compatibility -->
-      <input type="file"
-        id="file-input-${key}"
-        accept="image/jpeg,image/png,image/heic,image/heif,image/webp"
-        multiple
-        style="position:absolute;left:-9999px;opacity:0;width:1px;height:1px;"
-        onchange="handleImageSelect(event,'${key}',${maxAdd})">
-      <button type="button"
-        class="img-upload-area"
-        id="upload-area-${key}"
-        style="width:100%;margin-top:6px;border:none;background:var(--gray4);"
-        onclick="triggerFileInput('${key}')">
-        <div class="img-upload-icon">📷</div>
-        <div class="img-upload-text">Chụp / Chọn từ thư viện</div>
-        <div class="small text-gray" style="margin-top:2px;">Nhấn nhiều lần để thêm nhiều ảnh</div>
-      </button>
+      <div style="position:relative;margin-top:6px;">
+        <!-- File input overlays button exactly — iOS requires visible, in-viewport input -->
+        <input type="file"
+          id="file-input-${key}"
+          accept="image/*"
+          multiple
+          style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;"
+          onchange="handleImageSelect(event,'${key}',${maxAdd})">
+        <button type="button"
+          class="img-upload-area"
+          id="upload-area-${key}"
+          style="width:100%;border:none;background:var(--gray4);pointer-events:none;">
+          <div class="img-upload-icon">📷</div>
+          <div class="img-upload-text" id="upload-text-${key}">Chụp / Chọn từ thư viện</div>
+          <div class="small text-gray" style="margin-top:2px;">Nhấn nhiều lần để thêm nhiều ảnh</div>
+        </button>
+      </div>
     </div>`;
 }
 
@@ -3856,16 +3859,6 @@ async function loadApprovedSamplesForReport(planId) {
   } catch(e) {}
 }
 
-// iOS-safe file input trigger
-// iOS Safari requires input.click() called directly in user gesture handler
-// button onclick → input.click() is the most reliable cross-platform approach
-function triggerFileInput(key) {
-  const input = document.getElementById('file-input-' + key);
-  if (!input) return;
-  input.value = ''; // reset so same file can be re-selected
-  input.click();
-}
-
 async function handleImageSelect(event, key, maxAdd) {
   const files = Array.from(event.target.files);
   if (!files.length) return;
@@ -3883,11 +3876,9 @@ async function handleImageSelect(event, key, maxAdd) {
   const previewEl = document.getElementById(`preview-${key}`);
 
   // Show processing indicator
-  const processingId = `processing-${key}-${Date.now()}`;
   const processingEl = document.createElement('div');
-  processingEl.id = processingId;
-  processingEl.style.cssText = 'font-size:11px;color:var(--gray2);padding:4px 0;';
-  processingEl.textContent = `⏳ Đang xử lý ${toProcess.length} ảnh...`;
+  processingEl.style.cssText = 'font-size:11px;color:var(--gray2);padding:4px 0;grid-column:1/-1;';
+  processingEl.textContent   = `⏳ Đang xử lý ${toProcess.length} ảnh...`;
   previewEl.appendChild(processingEl);
 
   for (const file of toProcess) {
@@ -3897,32 +3888,27 @@ async function handleImageSelect(event, key, maxAdd) {
     const item = document.createElement('div');
     item.className = 'img-preview-item';
     item.innerHTML = `
-      <img src="${compressed.dataUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:6px;">
+      <img src="${compressed.dataUrl}" style="width:100%;height:72px;object-fit:cover;border-radius:6px;display:block;">
       <div class="img-remove" onclick="removeImage('${key}',${idx},this.parentElement)">×</div>
-      <div style="font-size:9px;color:var(--gray2);margin-top:2px;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${Math.round(compressed.size)}KB</div>`;
+      <div style="font-size:9px;color:var(--gray2);margin-top:2px;text-align:center;">${Math.round(compressed.size)}KB</div>`;
     previewEl.insertBefore(item, processingEl);
   }
-
-  // Remove processing indicator
   processingEl.remove();
 
-  if (countEl) countEl.textContent = `${reportFormData[key].length} / ${maxAdd} ảnh`;
+  const total = reportFormData[key].length;
+  if (countEl) countEl.textContent = `${total} / ${maxAdd} ảnh`;
 
-  // Reset input so same file can be re-selected
+  // Always reset input value — allows selecting same photo again on iOS
   event.target.value = '';
 
   if (files.length > remaining) {
     showToast(`Chỉ thêm được ${remaining} ảnh nữa (tối đa ${maxAdd})`, 'error');
   }
 
-  // Update upload area appearance
-  const areaEl = document.getElementById(`upload-area-${key}`);
-  if (areaEl && reportFormData[key].length >= maxAdd) {
-    areaEl.style.opacity = '0.5';
-    areaEl.querySelector('.img-upload-text').textContent = 'Đã đủ ảnh';
-  } else if (areaEl) {
-    areaEl.style.opacity = '1';
-    areaEl.querySelector('.img-upload-text').textContent = 'Chụp / Chọn ảnh';
+  // Update button text
+  const textEl = document.getElementById(`upload-text-${key}`);
+  if (textEl) {
+    textEl.textContent = total >= maxAdd ? `Đã đủ ${maxAdd} ảnh` : `Thêm ảnh (${total}/${maxAdd})`;
   }
 }
 
@@ -3931,15 +3917,11 @@ function removeImage(key, idx, el) {
   el.remove();
   const maxMap = { imgLocation: 10, imgFood: 20, imgOverview: 20, imgOther: 40 };
   const maxAdd = maxMap[key] || 40;
+  const total  = reportFormData[key].length;
   const countEl = document.getElementById(`count-${key}`);
-  if (countEl) countEl.textContent = `${reportFormData[key].length} / ${maxAdd} ảnh`;
-  // Re-enable upload button if was disabled
-  const areaEl = document.getElementById(`upload-area-${key}`);
-  if (areaEl) {
-    areaEl.style.opacity = '1';
-    const txt = areaEl.querySelector('.img-upload-text');
-    if (txt) txt.textContent = 'Chụp / Chọn từ thư viện';
-  }
+  if (countEl) countEl.textContent = `${total} / ${maxAdd} ảnh`;
+  const textEl = document.getElementById(`upload-text-${key}`);
+  if (textEl) textEl.textContent = total > 0 ? `Thêm ảnh (${total}/${maxAdd})` : 'Chụp / Chọn từ thư viện';
 }
 
 // Client-side image compression using Canvas
