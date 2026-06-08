@@ -1615,7 +1615,7 @@ body.mgr-mobile #screen-home .screen-content { padding-bottom: 70px; }
 // =====================================================
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const MAX_IMAGES = 20;
-const TARGET_IMG_KB = 150; // compress to ~150KB each
+const TARGET_IMG_KB = 80;  // compress to ~80KB — tối ưu cho 40 ảnh/report (~3.2MB)
 
 let currentUser = null;
 let currentLang = 'vi';
@@ -4031,37 +4031,89 @@ function compressImage(file, targetKB) {
 
 async function submitReport() {
   const btn = document.getElementById('btn-submit-report');
+
+  const isFirst = reportFormData._isFirstReport !== false;
+  if (isFirst && reportFormData.imgLocation.length === 0) { showToast('Bắt buộc có hình tên địa điểm', 'error'); return; }
+  if (isFirst && reportFormData.imgFood.length === 0)     { showToast('Bắt buộc có hình món ăn', 'error'); return; }
+  if (isFirst && reportFormData.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
+  const actualTasters = parseInt(document.getElementById('r-tasters')?.value) || 0;
+  if (isFirst && !actualTasters) { showToast('Vui lòng nhập số người thử', 'error'); return; }
+  if (!isFirst && reportFormData.imgLocation.length === 0 && reportFormData.imgFood.length === 0 &&
+      reportFormData.imgOverview.length === 0 && reportFormData.imgOther.length === 0 && !actualTasters) {
+    showToast('Vui lòng nhập ít nhất số người thử hoặc 1 hình ảnh', 'error'); return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang gửi...';
+
+  // ── STEP 1: Upload ảnh lên Drive ──────────────────────────
+  const hasImages = reportFormData.imgLocation.length + reportFormData.imgFood.length +
+                    reportFormData.imgOverview.length + reportFormData.imgOther.length > 0;
+  let imgFolderUrl = '';
+  let imgLocationUrls = [], imgFoodUrls = [], imgOverviewUrls = [], imgOtherUrls = [];
+
+  if (hasImages) {
+    loading(true, `📤 Đang tải ảnh lên Drive (0/${
+      reportFormData.imgLocation.length + reportFormData.imgFood.length +
+      reportFormData.imgOverview.length + reportFormData.imgOther.length
+    } ảnh)...`);
+    try {
+      const uploadRes = await api('POST', {
+        action:   'uploadReportImages',
+        planId:   currentPlanId,
+        userCode: currentUser.code,
+        images: {
+          imgLocation: reportFormData.imgLocation.map(i => ({ name: i.name, dataUrl: i.dataUrl })),
+          imgFood:     reportFormData.imgFood.map(i => ({ name: i.name, dataUrl: i.dataUrl })),
+          imgOverview: reportFormData.imgOverview.map(i => ({ name: i.name, dataUrl: i.dataUrl })),
+          imgOther:    reportFormData.imgOther.map(i => ({ name: i.name, dataUrl: i.dataUrl })),
+        },
+      });
+      if (uploadRes.success && uploadRes.folders) {
+        imgFolderUrl      = uploadRes.folders.root || '';
+        imgLocationUrls   = uploadRes.folders.imgLocation  || [];
+        imgFoodUrls       = uploadRes.folders.imgFood       || [];
+        imgOverviewUrls   = uploadRes.folders.imgOverview   || [];
+        imgOtherUrls      = uploadRes.folders.imgOther      || [];
+      } else {
+        // Upload thất bại — cảnh báo nhưng vẫn cho submit (ghi tên file làm fallback)
+        showToast('⚠️ Upload ảnh chưa hoàn tất, báo cáo vẫn được ghi nhận.', 'error', 5000);
+        imgLocationUrls = reportFormData.imgLocation.map(i => i.name);
+        imgFoodUrls     = reportFormData.imgFood.map(i => i.name);
+        imgOverviewUrls = reportFormData.imgOverview.map(i => i.name);
+        imgOtherUrls    = reportFormData.imgOther.map(i => i.name);
+      }
+    } catch(e) {
+      showToast('⚠️ Lỗi upload ảnh, báo cáo vẫn được lưu.', 'error', 5000);
+      imgLocationUrls = reportFormData.imgLocation.map(i => i.name);
+      imgFoodUrls     = reportFormData.imgFood.map(i => i.name);
+      imgOverviewUrls = reportFormData.imgOverview.map(i => i.name);
+      imgOtherUrls    = reportFormData.imgOther.map(i => i.name);
+    }
+  }
+
+  // ── STEP 2: Submit báo cáo với links ảnh ─────────────────
+  loading(true, '📊 Đang lưu báo cáo...');
   const data = {
-    actualTasters: parseInt(document.getElementById('r-tasters')?.value) || 0,
+    actualTasters: actualTasters,
     actualSales:   parseFloat(document.getElementById('r-sales')?.value) || 0,
     feedback:      document.getElementById('r-feedback')?.value?.trim(),
     notes:         document.getElementById('r-notes')?.value?.trim(),
     samplesUsed:   reportFormData.samplesUsed,
     markCompleted: reportFormData.markCompleted,
-    // Image data included — will be uploaded via Drive API separately
-    imgLocation:   reportFormData.imgLocation.map(i => i.name),
-    imgFood:       reportFormData.imgFood.map(i => i.name),
-    imgOverview:   reportFormData.imgOverview.map(i => i.name),
-    imgOther:      reportFormData.imgOther.map(i => i.name),
+    imgLocation:   imgLocationUrls,
+    imgFood:       imgFoodUrls,
+    imgOverview:   imgOverviewUrls,
+    imgOther:      imgOtherUrls,
+    imgFolderUrl:  imgFolderUrl,
   };
-
-  const isFirst = reportFormData._isFirstReport !== false; // default true
-  if (isFirst && reportFormData.imgLocation.length === 0) { showToast('Bắt buộc có hình tên địa điểm', 'error'); return; }
-  if (isFirst && reportFormData.imgFood.length === 0)     { showToast('Bắt buộc có hình món ăn', 'error'); return; }
-  if (isFirst && reportFormData.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
-  if (isFirst && !data.actualTasters)                     { showToast('Vui lòng nhập số người thử', 'error'); return; }
-  // Subsequent reports: at least 1 photo OR tasters required
-  if (!isFirst && reportFormData.imgLocation.length === 0 && reportFormData.imgFood.length === 0 &&
-      reportFormData.imgOverview.length === 0 && reportFormData.imgOther.length === 0 && !data.actualTasters) {
-    showToast('Vui lòng nhập ít nhất số người thử hoặc 1 hình ảnh', 'error'); return;
-  }
-
-  btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
-  loading(true, 'Đang lưu báo cáo...');
   try {
     const res = await api('POST', { action:'submitReport', planId: currentPlanId, data, userCode: currentUser.code });
     if (res.success) {
-      showToast('Báo cáo đã được ghi nhận! 🎉', 'success', 4000);
+      const folderLink = imgFolderUrl
+        ? ` <a href="${imgFolderUrl}" target="_blank" style="color:var(--teal);">📁 Xem ảnh</a>`
+        : '';
+      showToast('Báo cáo đã được ghi nhận! 🎉' + folderLink, 'success', 5000);
       showScreen('plans');
       loadMyPlans();
     } else {
