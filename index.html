@@ -1747,17 +1747,17 @@ function toInputDate(dateStr) {
 }
 function fmtDateTime(d) {
   if (!d) return '—';
-  const s = String(d);
-  // GAS format: "24/05/2026 10:05:43"
-  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s.substring(0,16);
-  const dd = new Date(d);
-  if (isNaN(dd)) return s;
-  const g = new Date(dd.getTime() + (7*60*60*1000));
-  return String(g.getUTCDate()).padStart(2,'0') + '/'
-       + String(g.getUTCMonth()+1).padStart(2,'0') + '/'
-       + g.getUTCFullYear() + ' '
-       + String(g.getUTCHours()).padStart(2,'0') + ':'
-       + String(g.getUTCMinutes()).padStart(2,'0');
+  const s = String(d).trim();
+  // GAS now returns "dd/MM/yyyy HH:mm" — pass through directly
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s.substring(0, 16);
+  // Fallback: ISO or other JS-parseable string → convert to GMT+7
+  const dd = new Date(s);
+  if (isNaN(dd)) return s.substring(0, 16) || s;
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(dd).replace(',', '');
 }
 function fmtPercent(num, den) {
   if (!den || den === 0) return '—';
@@ -1806,12 +1806,15 @@ function populateMonthFilters() {
  * API caller — handles Google Apps Script CORS restrictions.
  * GAS: GET requests work fine with CORS.
  *      POST via fetch with JSON body is blocked by browser CORS preflight.
- * Solution: Route ALL calls (GET + POST) as GET requests with params in URL.
- * POST data is encoded as "payload" URL param (stringified JSON).
- * GAS doGet() reads e.parameter.payload and dispatches accordingly.
+ * Solution:
+ *   - Small requests (GET + non-image POST): GET with payload= URL param (existing workaround).
+ *   - Large payloads (image uploads): Real POST with Content-Type: text/plain.
+ *     GAS doPost() reads e.postData.contents — no CORS preflight for text/plain.
+ *     Threshold: if payload > 4KB, use real POST body.
  */
 // Simple API response cache — GET only, 30s TTL
 const _apiCache = {};
+const _API_POST_THRESHOLD = 4096; // bytes — above this, use real POST body
 function _cacheKey(params) { return JSON.stringify(params); }
 
 async function api(method, params) {
@@ -1825,22 +1828,37 @@ async function api(method, params) {
     }
   }
 
-  let urlParams;
+  let fetchUrl, fetchOptions;
+
   if (method === 'GET') {
-    urlParams = new URLSearchParams(params);
+    // Standard GET — params in URL
+    const urlParams = new URLSearchParams(params);
+    fetchUrl    = `${SCRIPT_URL}?${urlParams.toString()}`;
+    fetchOptions = { method: 'GET', redirect: 'follow', cache: 'no-cache' };
   } else {
-    // Encode POST-like actions as GET with payload param (GAS CORS workaround)
-    urlParams = new URLSearchParams({ payload: JSON.stringify(params) });
+    // POST — decide based on payload size
+    const payloadStr = JSON.stringify(params);
+    if (payloadStr.length > _API_POST_THRESHOLD) {
+      // Large payload (e.g. image uploads): use real POST body with text/plain
+      // GAS doPost() handles this without CORS preflight
+      fetchUrl    = SCRIPT_URL;
+      fetchOptions = {
+        method:   'POST',
+        redirect: 'follow',
+        cache:    'no-cache',
+        headers:  { 'Content-Type': 'text/plain;charset=utf-8' },
+        body:     payloadStr,
+      };
+    } else {
+      // Small POST (login, approvals, etc.): keep existing GET+payload workaround
+      const urlParams = new URLSearchParams({ payload: payloadStr });
+      fetchUrl    = `${SCRIPT_URL}?${urlParams.toString()}`;
+      fetchOptions = { method: 'GET', redirect: 'follow', cache: 'no-cache' };
+    }
   }
 
-  const url = `${SCRIPT_URL}?${urlParams.toString()}`;
-
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      redirect: 'follow',
-      cache: 'no-cache',
-    });
+    const res = await fetch(fetchUrl, fetchOptions);
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const data = await res.json();
     // Store in cache for GET requests
@@ -1850,7 +1868,7 @@ async function api(method, params) {
     }
     return data;
   } catch (err) {
-    console.error('[API] error:', err.message, 'URL:', url.substring(0, 150));
+    console.error('[API] error:', err.message, 'URL:', fetchUrl.substring(0, 150));
     throw err;
   }
 }
@@ -2309,7 +2327,12 @@ async function loadMyPlans() {
       listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có kế hoạch nào</div><div class="empty-sub">Nhấn + để tạo mới</div></div>';
       return;
     }
-    plans.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+    plans.sort((a,b) => {
+      // Sort by execution date ascending (upcoming first), then by createdAt desc as tiebreak
+      const da = parseLocalDate(a.date), db = parseLocalDate(b.date);
+      if (da && db && da.getTime() !== db.getTime()) return da - db;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
     if (!window._planCache) window._planCache = {};
     plans.forEach(p => { window._planCache[p.id] = p; });
 
@@ -4047,16 +4070,15 @@ async function submitReport() {
   btn.textContent = '⏳ Đang gửi...';
 
   // ── STEP 1: Upload ảnh lên Drive ──────────────────────────
-  const hasImages = reportFormData.imgLocation.length + reportFormData.imgFood.length +
-                    reportFormData.imgOverview.length + reportFormData.imgOther.length > 0;
+  const totalImgCount = reportFormData.imgLocation.length + reportFormData.imgFood.length +
+                        reportFormData.imgOverview.length + reportFormData.imgOther.length;
+  const hasImages = totalImgCount > 0;
   let imgFolderUrl = '';
   let imgLocationUrls = [], imgFoodUrls = [], imgOverviewUrls = [], imgOtherUrls = [];
+  let uploadOk = !hasImages; // if no images, treat as ok
 
   if (hasImages) {
-    loading(true, `📤 Đang tải ảnh lên Drive (0/${
-      reportFormData.imgLocation.length + reportFormData.imgFood.length +
-      reportFormData.imgOverview.length + reportFormData.imgOther.length
-    } ảnh)...`);
+    loading(true, `📤 Đang tải ${totalImgCount} ảnh lên Drive...`);
     try {
       const uploadRes = await api('POST', {
         action:   'uploadReportImages',
@@ -4070,25 +4092,34 @@ async function submitReport() {
         },
       });
       if (uploadRes.success && uploadRes.folders) {
-        imgFolderUrl      = uploadRes.folders.root || '';
-        imgLocationUrls   = uploadRes.folders.imgLocation  || [];
-        imgFoodUrls       = uploadRes.folders.imgFood       || [];
-        imgOverviewUrls   = uploadRes.folders.imgOverview   || [];
-        imgOtherUrls      = uploadRes.folders.imgOther      || [];
+        imgFolderUrl    = uploadRes.folders.root        || '';
+        imgLocationUrls = uploadRes.folders.imgLocation || [];
+        imgFoodUrls     = uploadRes.folders.imgFood     || [];
+        imgOverviewUrls = uploadRes.folders.imgOverview || [];
+        imgOtherUrls    = uploadRes.folders.imgOther    || [];
+        uploadOk        = true;
+        const uploaded  = uploadRes.uploaded || 0;
+        const total     = uploadRes.total    || totalImgCount;
+        if (uploaded < total) {
+          // Partial upload — warn but continue (some images made it)
+          showToast(`⚠️ Chỉ tải được ${uploaded}/${total} ảnh lên Drive. Báo cáo vẫn được ghi nhận.`, 'error', 6000);
+        }
       } else {
-        // Upload thất bại — cảnh báo nhưng vẫn cho submit (ghi tên file làm fallback)
-        showToast('⚠️ Upload ảnh chưa hoàn tất, báo cáo vẫn được ghi nhận.', 'error', 5000);
-        imgLocationUrls = reportFormData.imgLocation.map(i => i.name);
-        imgFoodUrls     = reportFormData.imgFood.map(i => i.name);
-        imgOverviewUrls = reportFormData.imgOverview.map(i => i.name);
-        imgOtherUrls    = reportFormData.imgOther.map(i => i.name);
+        // Full upload failure — stop here, do not submit report
+        loading(false);
+        btn.disabled    = false;
+        btn.textContent = '📊 Gửi báo cáo';
+        const errMsg = uploadRes.error || 'Lỗi không xác định';
+        showToast(`❌ Upload ảnh thất bại: ${errMsg}\nVui lòng thử lại.`, 'error', 8000);
+        return;
       }
     } catch(e) {
-      showToast('⚠️ Lỗi upload ảnh, báo cáo vẫn được lưu.', 'error', 5000);
-      imgLocationUrls = reportFormData.imgLocation.map(i => i.name);
-      imgFoodUrls     = reportFormData.imgFood.map(i => i.name);
-      imgOverviewUrls = reportFormData.imgOverview.map(i => i.name);
-      imgOtherUrls    = reportFormData.imgOther.map(i => i.name);
+      loading(false);
+      btn.disabled    = false;
+      btn.textContent = '📊 Gửi báo cáo';
+      showToast('❌ Lỗi kết nối khi upload ảnh. Vui lòng kiểm tra mạng và thử lại.', 'error', 8000);
+      console.error('[submitReport] upload error:', e.message);
+      return;
     }
   }
 
@@ -4269,16 +4300,15 @@ function fmtTime(t) {
   if (!t) return '—';
   const s = String(t).trim();
 
-  // Already plain HH:mm or H:mm (what GAS fmtT() returns when working correctly)
-  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) return s.substring(0,5);
+  // Already plain HH:mm or H:mm — GAS rowToPlanObject returns this format
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) return s.substring(0, 5);
 
-  // ISO timestamp — GAS serializes sheet time values as "1899-12-30THH:MM:SS.000Z"
-  // Sheet time "22:06" (local GMT+7) → GAS Date object → JSON = "1899-12-30T15:06:00.000Z"
-  // i.e. UTC = local - 7h.  To recover local time: add 7 hours.
+  // ISO timestamp: "1899-12-30T15:06:00.000Z" — Sheet time stored as Date object,
+  // NOT yet through rowToPlanObject's fmtT. Add 7h to recover GMT+7.
   if (s.includes('T')) {
     const match = s.match(/T(\d{2}):(\d{2})/);
     if (match) {
-      let h = parseInt(match[1], 10) + 7; // convert UTC → GMT+7
+      let h = parseInt(match[1], 10) + 7;
       if (h >= 24) h -= 24;
       return String(h).padStart(2, '0') + ':' + match[2];
     }
@@ -4321,12 +4351,35 @@ function buildTopLocations(items, limit) {
     </div>`).join('') + '</div>';
 }
 
-function buildSkuUsage(topSkus, products) {
+function buildSkuUsage(topSkus, products, channelBreakdown) {
   if (!topSkus || topSkus.length === 0) return '<div class="small text-gray" style="padding:0 16px 8px;">Chưa có dữ liệu</div>';
   return '<div style="padding:4px 16px 10px;display:flex;flex-wrap:wrap;">' +
     topSkus.slice(0,8).map(s => {
       const prod = (products||[]).find(p => p.ma === s.ma);
-      return `<div class="sku-chip">${prod ? prod.ten : s.ma}<span class="qty">${s.qty}</span></div>`;
+      const price= prod ? (prod.giaMT||prod.giaGT||0) : 0;
+      const val  = price > 0 ? ` · ${fmtCurrency(s.qty * price)}` : '';
+      return `<div class="sku-chip" style="cursor:default;" title="${prod?prod.ten:s.ma} — ${s.qty} cái${val}">${prod ? prod.ten : s.ma}<span class="qty">${s.qty}</span></div>`;
+    }).join('') + '</div>';
+}
+
+function buildTop5Table(items, valueKey, valueLabel, valueColor, isCurrency, unit) {
+  if (!items || items.length === 0) return '<div class="small text-gray" style="padding:0 16px 8px;">Chưa có dữ liệu</div>';
+  unit = unit || '';
+  return `<div style="background:var(--white);border-radius:var(--radius);margin:0 16px 8px;box-shadow:var(--shadow);">` +
+    items.map((p, i) => {
+      const val = p[valueKey] != null ? (isCurrency ? fmtCurrency(p[valueKey]) : fmtNum(p[valueKey]) + unit) : '—';
+      const medals = ['gold','silver','bronze'];
+      return `<div style="display:flex;align-items:center;padding:8px 12px;gap:10px;border-bottom:1px solid var(--gray3);">
+        <div class="rank-num ${medals[i]||''}" style="flex-shrink:0;">${i+1}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.locationName}</div>
+          <div style="font-size:10px;color:var(--gray2);">${fmtDate(p.date)} · ${p.region||''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:14px;font-weight:800;color:${valueColor};">${val}</div>
+          <div style="font-size:9px;color:var(--gray2);">${valueLabel}</div>
+        </div>
+      </div>`;
     }).join('') + '</div>';
 }
 
@@ -4746,11 +4799,12 @@ async function switchMgrTab(tab, month, channel) {
       ]);
       renderMgrOverview(el, ovR.success?ovR.data:null, pfR.success?pfR.data:null, month, channel);
     } else if (tab === 'staff') {
-      const [pfR, usR] = await Promise.all([
+      const [pfR, usR, ovR] = await Promise.all([
         api('GET', { action:'getDashboardPerformance', month, channel }),
         api('GET', { action:'getUsers', channel:'', region:'' }),
+        api('GET', { action:'getDashboardOverview', month, channel }),
       ]);
-      renderMgrStaff(el, pfR.success?pfR.data:null, usR.success?usR.data:[], month);
+      renderMgrStaff(el, pfR.success?pfR.data:null, usR.success?usR.data:[], month, ovR.success?ovR.data:null);
     } else if (tab === 'cost') {
       const ovR = await api('GET', { action:'getDashboardOverview', month, channel });
       renderMgrCost(el, ovR.success?ovR.data:null, month);
@@ -4767,12 +4821,15 @@ async function switchMgrTab(tab, month, channel) {
 }
 
 function renderMgrOverview(el, over, perf, month, channel) {
-  const e = over ? over.effectiveness   ||{} : {};
-  const c = over ? over.costs           ||{} : {};
-  const s = over ? over.statusBreakdown ||{} : {};
-  const cb= over ? over.channelBreakdown||{} : {};
+  const e   = over ? over.effectiveness   ||{} : {};
+  const c   = over ? over.costs           ||{} : {};
+  const s   = over ? over.statusBreakdown ||{} : {};
+  const cb  = over ? over.channelBreakdown||{} : {};
+  const t5  = over ? over.top5            ||{} : {};
 
   let html = '<div style="padding:8px 0 0;" class="fade-in">';
+
+  // ── Pipeline status strip ──
   html += `<div style="padding:10px 16px 4px;"><div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;">
     <div class="pipeline-item" style="min-width:70px;flex:1;"><div class="pipeline-num" style="color:var(--yellow2);">${s.cho_duyet||0}</div><div class="pipeline-label">Chờ duyệt</div></div>
     <div class="pipeline-item" style="min-width:70px;flex:1;"><div class="pipeline-num" style="color:var(--green);">${s.da_duyet||0}</div><div class="pipeline-label">Đã duyệt</div></div>
@@ -4780,26 +4837,75 @@ function renderMgrOverview(el, over, perf, month, channel) {
     <div class="pipeline-item" style="min-width:70px;flex:1;"><div class="pipeline-num" style="color:var(--red);">${s.tu_choi||0}</div><div class="pipeline-label">Từ chối</div></div>
     <div class="pipeline-item" style="min-width:70px;flex:1;"><div class="pipeline-num">${over?over.totalPlans||0:0}</div><div class="pipeline-label">Tổng buổi</div></div>
   </div></div>`;
+
+  // ── KPI Block 1: 4 KPI chính ──
   html += `<div class="dash-kpi-grid four">
     ${kpiCard('Khách tiếp cận', fmtNum(e.totalTasters), 'tổng người thử mẫu', 'red', '👥')}
     ${kpiCard('TB/buổi', fmtNum(e.avgTastersPerEvent), 'người thử trung bình', 'green', '📊')}
     ${kpiCard('Doanh số', fmtCurrency(e.totalActualSales), 'trong buổi sampling', 'teal', '💰')}
     ${kpiCard('CP/người thử', fmtCurrency(e.costPerContact), 'cost per contact', 'navy', '🧮')}
   </div>`;
+
+  // ── Channel KPI breakdown (Khách tiếp cận + Doanh số + CP/người theo kênh) ──
+  const CH_ORDER_OV = ['MT','GT South','GT Central','GT North'];
+  const sortedCbKeys = [...CH_ORDER_OV.filter(c=>cb[c]), ...Object.keys(cb).filter(c=>!CH_ORDER_OV.includes(c))];
+  if (sortedCbKeys.length > 0) {
+    html += sectionTitle('📍 KPI theo kênh / vùng');
+    html += '<div style="display:flex;flex-direction:column;gap:8px;padding:0 16px 4px;">';
+    sortedCbKeys.forEach(ch => {
+      const d   = cb[ch];
+      const cpc = d.tasters>0?Math.round((d.cost||0)/d.tasters):0;
+      html += `<div style="background:var(--white);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:14px;font-weight:700;">${ch}</div>
+          <div style="font-size:11px;color:var(--gray2);">${d.count} buổi</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+          <div style="text-align:center;"><div style="font-size:15px;font-weight:800;color:var(--red);">${fmtNum(d.tasters||0)}</div><div style="font-size:9px;color:var(--gray2);">Khách TT</div></div>
+          <div style="text-align:center;"><div style="font-size:15px;font-weight:800;color:var(--teal);">${fmtCurrency(d.sales||0)}</div><div style="font-size:9px;color:var(--gray2);">Doanh số</div></div>
+          <div style="text-align:center;"><div style="font-size:15px;font-weight:800;color:var(--green);">${fmtCurrency(cpc)}</div><div style="font-size:9px;color:var(--gray2);">CP/người</div></div>
+          <div style="text-align:center;"><div style="font-size:15px;font-weight:800;color:var(--navy);">${d.count>0?fmtNum(Math.round((d.tasters||0)/d.count)):'—'}</div><div style="font-size:9px;color:var(--gray2);">TB/buổi</div></div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  // ── Trend + Top locations ──
   html += `<div class="dash-desktop-grid" style="padding:4px 16px 0;">
     <div><div class="section-title" style="padding:12px 0 4px;">📈 Xu hướng 6 tháng</div>
     <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;">${buildTrendBars(over?over.monthlyTrend:null)}</div></div>
     <div><div class="section-title" style="padding:12px 0 4px;">🏆 Top địa điểm</div>
     <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;">${buildTopLocations(perf?perf.items:null, 5)}</div></div>
   </div>`;
-  if (Object.keys(cb).length > 0) {
-    html += sectionTitle('📍 Phân bổ kênh');
-    html += '<div class="compare-grid">';
-    Object.entries(cb).forEach(([ch,data]) => {
-      html += `<div class="compare-card" style="border-top-color:var(--red);"><div class="compare-channel">${ch}</div><div class="compare-pct" style="color:var(--navy);font-size:20px;">${data.count}</div><div class="compare-sub">buổi</div><div class="compare-sub">${fmtNum(data.tasters||0)} người</div><div class="compare-sub">${fmtCurrency(data.sales||0)}</div></div>`;
-    });
-    html += '</div>';
+
+  // ── Top 5 / Bottom 5 ──
+  if (t5.bySales && t5.bySales.length > 0) {
+    html += sectionTitle('🥇 Top 5 điểm doanh số cao nhất');
+    html += buildTop5Table(t5.bySales, 'actualSales', 'Doanh số', 'var(--teal)');
+    html += sectionTitle('⬇️ Top 5 điểm doanh số thấp nhất');
+    html += buildTop5Table(t5.bottom5Sales, 'actualSales', 'Doanh số', 'var(--gray2)');
   }
+  if (t5.byTasters && t5.byTasters.length > 0) {
+    html += sectionTitle('👥 Top 5 điểm người thử cao nhất');
+    html += buildTop5Table(t5.byTasters, 'actualTasters', 'Khách TT', 'var(--red)');
+    html += sectionTitle('👥 Top 5 điểm người thử thấp nhất');
+    html += buildTop5Table(t5.bottom5Tasters, 'actualTasters', 'Khách TT', 'var(--gray2)');
+  }
+  if (t5.byCpcHigh && t5.byCpcHigh.length > 0) {
+    html += sectionTitle('💸 Top 5 CP/người thử cao nhất');
+    html += buildTop5Table(t5.byCpcHigh, 'costPerContact', 'CP/người', 'var(--red)', true);
+    html += sectionTitle('💡 Top 5 CP/người thử thấp nhất');
+    html += buildTop5Table(t5.byCpcLow, 'costPerContact', 'CP/người', 'var(--green)', true);
+  }
+  if (t5.byPotentialHigh && t5.byPotentialHigh.length > 0) {
+    html += sectionTitle('⭐ Top điểm tiềm năng cao nhất');
+    html += buildTop5Table(t5.byPotentialHigh, 'potential', 'Tiềm năng', 'var(--green)', false, '%');
+    html += sectionTitle('📉 Top điểm tiềm năng thấp nhất');
+    html += buildTop5Table(t5.byPotentialLow, 'potential', 'Tiềm năng', 'var(--gray2)', false, '%');
+  }
+
+  // ── Top SKU + quick actions ──
   html += `<div class="dash-desktop-grid" style="padding:4px 16px 0;">
     <div><div class="section-title" style="padding:12px 0 4px;">📦 Top SKU</div><div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:10px;">${buildSkuUsage(over?over.topSkus:null,masterData.products)}</div></div>
     <div><div class="section-title" style="padding:12px 0 4px;">⚡ Hành động nhanh</div>
@@ -4811,8 +4917,12 @@ function renderMgrOverview(el, over, perf, month, channel) {
   el.innerHTML = html;
 }
 
-function renderMgrStaff(el, perf, users, month) {
-  const items = perf ? perf.items || [] : [];
+function renderMgrStaff(el, perf, users, month, over) {
+  const items    = perf ? perf.items || [] : [];
+  const staffStats = over ? over.staffStats || {} : {};
+  const byChannel  = staffStats.byChannel || {};
+
+  // Build per-person map
   const staffMap = {};
   items.forEach(p => {
     (p.executors||[]).forEach(code => {
@@ -4826,16 +4936,84 @@ function renderMgrStaff(el, perf, users, month) {
   });
   const staffList = Object.entries(staffMap).map(([code,d]) => {
     const user = (users||[]).find(u=>u.code===code);
-    return {code, name:user?user.name:code, role:user?user.role:'', ...d, locCount:d.locations.size};
+    return {code, name:user?user.name:code, role:user?user.role:'', channel:user?user.channel:'', ...d, locCount:d.locations.size};
   }).sort((a,b)=>b.events-a.events);
 
+  const totalDone    = items.filter(p=>p.status==='hoan_thanh').length;
+  const totalPending = items.filter(p=>p.status==='cho_duyet'||p.status==='da_duyet').length;
+  const compRate     = items.length>0?Math.round(totalDone/items.length*100):0;
+
   let html = '<div style="padding:8px 0 0;" class="fade-in">';
+
+  // ── KPI Block 1: Nhân sự ──
   html += `<div class="dash-kpi-grid four">
     ${kpiCard('Nhân sự hoạt động', staffList.length, 'người trong kỳ', 'red', '👥')}
-    ${kpiCard('Tổng buổi', items.length, 'kế hoạch ghi nhận', 'teal', '📋')}
-    ${kpiCard('TB buổi/người', staffList.length>0?Math.round(items.length/staffList.length):0, '', 'green', '📊')}
-    ${kpiCard('Hoàn thành', items.filter(p=>p.status==='hoan_thanh').length, 'kế hoạch', 'navy', '✅')}
+    ${kpiCard('Tổng PG đã dùng', fmtNum(staffStats.totalPgUsed||0), 'tổng lượt PG', 'teal', '🧑‍💼')}
+    ${kpiCard('TB PG/buổi', staffStats.avgPgPerEvent||'—', 'TB số PG mỗi buổi', 'navy', '📊')}
+    ${kpiCard('Tổng giờ PG', fmtNum(staffStats.totalPgHours||0), 'giờ thuê PG', 'yellow', '⏱️')}
   </div>`;
+
+  // ── KPI Block 2: Buổi ──
+  html += `<div class="dash-kpi-grid four" style="padding-top:4px;">
+    ${kpiCard('Tổng buổi', items.length, 'kế hoạch ghi nhận', 'red', '📋')}
+    ${kpiCard('Hoàn thành', totalDone, compRate+'% tỉ lệ', 'green', '✅')}
+    ${kpiCard('Còn pending', totalPending, 'đã duyệt + chờ duyệt', 'yellow', '⏳')}
+    ${kpiCard('Tỉ lệ hoàn thành', compRate+'%', totalDone+'/'+items.length, 'teal', '🎯')}
+  </div>`;
+
+  // ── Bảng thống kê theo kênh ──
+  if (Object.keys(byChannel).length > 0) {
+    html += sectionTitle('📊 Bảng thống kê theo kênh');
+    const CH_ORDER = ['MT','GT South','GT Central','GT North'];
+    const sortedCh = [...CH_ORDER.filter(c=>byChannel[c]), ...Object.keys(byChannel).filter(c=>!CH_ORDER.includes(c))];
+    html += `<div style="overflow-x:auto;margin:0 16px 12px;border-radius:var(--radius);box-shadow:var(--shadow);">
+    <table style="width:100%;border-collapse:collapse;background:var(--white);font-size:12px;">
+      <thead>
+        <tr style="background:var(--gray4);">
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray2);border-bottom:2px solid var(--gray3);">Kênh / Vùng</th>
+          <th style="text-align:right;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray2);border-bottom:2px solid var(--gray3);">Tổng buổi</th>
+          <th style="text-align:right;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray2);border-bottom:2px solid var(--gray3);">Hoàn thành</th>
+          <th style="text-align:right;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray2);border-bottom:2px solid var(--gray3);">Pending</th>
+          <th style="text-align:right;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray2);border-bottom:2px solid var(--gray3);">PG dùng</th>
+          <th style="text-align:right;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray2);border-bottom:2px solid var(--gray3);">Giờ PG</th>
+          <th style="text-align:right;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray2);border-bottom:2px solid var(--gray3);">Tỉ lệ HT</th>
+        </tr>
+      </thead>
+      <tbody>`;
+    sortedCh.forEach(ch => {
+      const d = byChannel[ch];
+      const cr = d.completionRate || 0;
+      const crColor = cr>=80?'var(--green)':cr>=50?'var(--yellow2)':'var(--red)';
+      html += `<tr style="border-bottom:1px solid var(--gray3);">
+        <td style="text-align:left;padding:8px 10px;font-weight:600;">${ch}</td>
+        <td style="text-align:right;padding:8px 10px;font-weight:700;color:var(--navy);">${d.sessions}</td>
+        <td style="text-align:right;padding:8px 10px;color:var(--green);font-weight:600;">${d.done}</td>
+        <td style="text-align:right;padding:8px 10px;color:var(--yellow2);font-weight:600;">${d.pending}</td>
+        <td style="text-align:right;padding:8px 10px;">${fmtNum(d.pgUsed)}</td>
+        <td style="text-align:right;padding:8px 10px;">${fmtNum(d.pgHours)}</td>
+        <td style="text-align:right;padding:8px 10px;font-weight:700;color:${crColor};">${cr}%</td>
+      </tr>`;
+    });
+    // Totals row
+    const totS   = sortedCh.reduce((s,c)=>s+(byChannel[c].sessions||0),0);
+    const totD   = sortedCh.reduce((s,c)=>s+(byChannel[c].done||0),0);
+    const totP   = sortedCh.reduce((s,c)=>s+(byChannel[c].pending||0),0);
+    const totPG  = sortedCh.reduce((s,c)=>s+(byChannel[c].pgUsed||0),0);
+    const totH   = sortedCh.reduce((s,c)=>s+(byChannel[c].pgHours||0),0);
+    const totCR  = totS>0?Math.round(totD/totS*100):0;
+    html += `<tr style="background:var(--gray4);font-weight:700;border-top:2px solid var(--gray3);">
+      <td style="text-align:left;padding:8px 10px;">Tổng cộng</td>
+      <td style="text-align:right;padding:8px 10px;color:var(--navy);">${totS}</td>
+      <td style="text-align:right;padding:8px 10px;color:var(--green);">${totD}</td>
+      <td style="text-align:right;padding:8px 10px;color:var(--yellow2);">${totP}</td>
+      <td style="text-align:right;padding:8px 10px;">${fmtNum(totPG)}</td>
+      <td style="text-align:right;padding:8px 10px;">${fmtNum(totH)}</td>
+      <td style="text-align:right;padding:8px 10px;color:${totCR>=80?'var(--green)':totCR>=50?'var(--yellow2)':'var(--red)'};">${totCR}%</td>
+    </tr>`;
+    html += '</tbody></table></div>';
+  }
+
+  // ── Ranking nhân sự ──
   html += sectionTitle('🏅 Ranking nhân sự');
   html += `<div style="background:var(--white);border-radius:var(--radius);margin:0 16px 12px;box-shadow:var(--shadow);">
     <div style="padding:10px 16px 4px;display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;font-size:10px;font-weight:700;color:var(--gray2);text-transform:uppercase;border-bottom:1px solid var(--gray3);"><span>#</span><span>Nhân viên</span><span>Buổi</span><span>Khách</span></div>`;
@@ -4844,7 +5022,7 @@ function renderMgrStaff(el, perf, users, month) {
     const eff = s.events>0?Math.round((s.done/s.events)*100):0;
     html += `<div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;padding:10px 16px;align-items:center;border-bottom:1px solid var(--gray3);">
       <div class="rank-num ${medals[i]||''}">${i+1}</div>
-      <div><div style="font-size:13px;font-weight:600;">${s.name}</div><div style="font-size:10px;color:var(--gray2);">${s.role} · ${s.locCount} điểm</div>
+      <div><div style="font-size:13px;font-weight:600;">${s.name}</div><div style="font-size:10px;color:var(--gray2);">${s.role}${s.channel?' · '+s.channel:''} · ${s.locCount} điểm</div>
         <div style="margin-top:4px;height:4px;background:var(--gray3);border-radius:2px;overflow:hidden;"><div style="height:100%;width:${eff}%;background:${eff>=80?'var(--green)':eff>=50?'var(--yellow2)':'var(--red)'};border-radius:2px;"></div></div>
         <div style="font-size:10px;color:var(--gray2);margin-top:1px;">${eff}% hoàn thành</div>
       </div>
@@ -4861,14 +5039,15 @@ function renderMgrCost(el, over, month) {
   const c  = over ? over.costs            ||{} : {};
   const cb = over ? over.channelBreakdown ||{} : {};
   const e  = over ? over.effectiveness   ||{} : {};
+  const cd = over ? over.channelCostDetail||[] : [];
   const total = c.total || 1;
 
   let html = '<div style="padding:8px 0 0;" class="fade-in">';
   html += `<div class="dash-kpi-grid four">
     ${kpiCard('Tổng chi phí', fmtCurrency(c.total), 'tất cả hoạt động', 'red', '💰')}
-    ${kpiCard('Chi phí PG', fmtCurrency(c.pg), Math.round(c.pg/total*100)+'%', 'navy', '👥')}
-    ${kpiCard('Chi phí địa điểm', fmtCurrency(c.location), Math.round(c.location/total*100)+'%', 'teal', '📍')}
-    ${kpiCard('Quà tặng', fmtCurrency(c.gifts), Math.round(c.gifts/total*100)+'%', 'yellow', '🎁')}
+    ${kpiCard('Chi phí PG', fmtCurrency(c.pg), Math.round((c.pg||0)/total*100)+'%', 'navy', '👥')}
+    ${kpiCard('Chi phí địa điểm', fmtCurrency(c.location), Math.round((c.location||0)/total*100)+'%', 'teal', '📍')}
+    ${kpiCard('Quà tặng', fmtCurrency(c.gifts), Math.round((c.gifts||0)/total*100)+'%', 'yellow', '🎁')}
   </div>`;
   html += `<div class="dash-kpi-grid four" style="padding-top:4px;">
     ${kpiCard('CP/người thử', fmtCurrency(e.costPerContact), 'cost per contact', 'green', '🧮')}
@@ -4876,6 +5055,65 @@ function renderMgrCost(el, over, month) {
     ${kpiCard('Doanh số', fmtCurrency(e.totalActualSales), '', '', '📈')}
     ${kpiCard('ROI ước tính', e.totalActualSales>0&&c.total>0?(e.totalActualSales/c.total).toFixed(1)+'x':'—', 'DS/CP', 'teal', '🎯')}
   </div>`;
+
+  // ── Bảng chi tiết chi phí theo kênh/vùng ──
+  if (cd.length > 0) {
+    html += sectionTitle('📋 Chi tiết chi phí theo kênh / vùng');
+    const CH_ORDER = ['MT','GT South','GT Central','GT North'];
+    const sortedCd = [...cd].sort((a,b) => {
+      const ai = CH_ORDER.indexOf(a.channel), bi = CH_ORDER.indexOf(b.channel);
+      if (ai>=0&&bi>=0) return ai-bi;
+      if (ai>=0) return -1; if (bi>=0) return 1;
+      return b.total-a.total;
+    });
+    html += `<div style="overflow-x:auto;margin:0 16px 12px;border-radius:var(--radius);box-shadow:var(--shadow);">
+    <table style="width:100%;border-collapse:collapse;background:var(--white);font-size:11px;">
+      <thead>
+        <tr style="background:var(--navy);">
+          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">Kênh / Vùng</th>
+          <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">Số buổi</th>
+          <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">CP Địa điểm</th>
+          <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">CP PG</th>
+          <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">Số PG dùng</th>
+          <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">Tổng giờ PG</th>
+          <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">CP mẫu thử</th>
+          <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">Tổng cộng</th>
+        </tr>
+      </thead>
+      <tbody>`;
+    sortedCd.forEach(row => {
+      html += `<tr style="border-bottom:1px solid var(--gray3);">
+        <td style="text-align:left;padding:7px 10px;font-weight:700;white-space:nowrap;">${row.channel}</td>
+        <td style="text-align:right;padding:7px 10px;">${row.sessions}</td>
+        <td style="text-align:right;padding:7px 10px;">${fmtCurrency(row.costLocation)}</td>
+        <td style="text-align:right;padding:7px 10px;">${fmtCurrency(row.costPg)}</td>
+        <td style="text-align:right;padding:7px 10px;">${fmtNum(row.pgUsed)}</td>
+        <td style="text-align:right;padding:7px 10px;">${fmtNum(row.pgHoursTotal)}</td>
+        <td style="text-align:right;padding:7px 10px;">${fmtCurrency(row.costSample)}</td>
+        <td style="text-align:right;padding:7px 10px;font-weight:700;color:var(--red);">${fmtCurrency(row.total)}</td>
+      </tr>`;
+    });
+    // Totals
+    const tS = sortedCd.reduce((s,r)=>s+r.sessions,0);
+    const tL = sortedCd.reduce((s,r)=>s+r.costLocation,0);
+    const tP = sortedCd.reduce((s,r)=>s+r.costPg,0);
+    const tG = sortedCd.reduce((s,r)=>s+r.pgUsed,0);
+    const tH = sortedCd.reduce((s,r)=>s+r.pgHoursTotal,0);
+    const tM = sortedCd.reduce((s,r)=>s+r.costSample,0);
+    const tT = sortedCd.reduce((s,r)=>s+r.total,0);
+    html += `<tr style="background:var(--gray4);font-weight:700;border-top:2px solid var(--gray3);">
+      <td style="text-align:left;padding:8px 10px;">Tổng cộng</td>
+      <td style="text-align:right;padding:8px 10px;">${tS}</td>
+      <td style="text-align:right;padding:8px 10px;">${fmtCurrency(tL)}</td>
+      <td style="text-align:right;padding:8px 10px;">${fmtCurrency(tP)}</td>
+      <td style="text-align:right;padding:8px 10px;">${fmtNum(tG)}</td>
+      <td style="text-align:right;padding:8px 10px;">${fmtNum(tH)}</td>
+      <td style="text-align:right;padding:8px 10px;">${fmtCurrency(tM)}</td>
+      <td style="text-align:right;padding:8px 10px;color:var(--red);">${fmtCurrency(tT)}</td>
+    </tr>`;
+    html += '</tbody></table></div>';
+  }
+
   html += sectionTitle('📊 Phân bổ chi phí');
   html += `<div class="card" style="margin:0 16px 12px;"><div class="card-body">
     ${[['PG','var(--teal)',c.pg],['Địa điểm','var(--navy)',c.location],['Quà tặng','var(--yellow2)',c.gifts]].map(([nm,col,val]) =>
@@ -4883,12 +5121,10 @@ function renderMgrCost(el, over, month) {
     ).join('')}
   </div></div>`;
   if (Object.keys(cb).length > 0) {
-    html += sectionTitle('💰 Chi phí theo kênh');
-    // Show each channel/region separately (MT, GT South, GT Central, GT North)
+    html += sectionTitle('💰 Chi phí theo kênh (bar chart)');
     const CHANNEL_ORDER = ['MT', 'GT South', 'GT Central', 'GT North', 'HCM', 'GT'];
     const maxCost = Math.max(...Object.values(cb).map(d=>d.cost||0), 1);
     html += `<div class="card" style="margin:0 16px 12px;"><div class="card-body">`;
-    // Sort by defined order, then by cost descending
     const sortedChannels = Object.entries(cb).sort((a,b) => {
       const ai = CHANNEL_ORDER.indexOf(a[0]);
       const bi = CHANNEL_ORDER.indexOf(b[0]);
@@ -5727,24 +5963,66 @@ async function renderDashApproval(plans, el) {
     if (res.success) res.data.forEach(u => { _userNameCache[u.code] = u.name; });
   } catch(e) {}
 
-  const totalPending = plans.length + cancelReqs.length;
+  // Store data for re-render + filtering
+  window._lastApprovalPlans    = plans;
+  window._lastApprovalPlansAll = plans;  // full unfiltered set
+  window._lastCancelReqs       = cancelReqs;
+  window._lastApprovalEl       = el;
+
+  // Build channel options from plans
+  const channels = [...new Set([...plans, ...cancelReqs].map(p => p.region || '').filter(Boolean))].sort();
+  const channelOpts = channels.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  // Build month options
+  const months = [...new Set([...plans, ...cancelReqs].map(p => p.date ? String(p.date).substring(0,7) : '').filter(Boolean))].sort().reverse();
+  const monthOpts = months.map(m => {
+    const [y, mo] = m.split('-');
+    return `<option value="${m}">Tháng ${mo}/${y}</option>`;
+  }).join('');
 
   let html = `
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 4px;">
-    <div style="font-size:13px;color:var(--gray2);font-weight:600;">${plans.length} chờ duyệt${cancelReqs.length > 0 ? ` · <span style="color:#c0392b;">${cancelReqs.length} yêu cầu hủy</span>` : ''}</div>
-    <div class="view-toggle-bar">
-      <button class="view-toggle-btn ${_approvalView==='kanban'?'active':''}" onclick="_approvalView='kanban';_rerenderApproval()">📋 Kanban</button>
-      <button class="view-toggle-btn ${_approvalView==='list'?'active':''}" onclick="_approvalView='list';_rerenderApproval()">☰ Danh sách</button>
+  <div style="padding:10px 16px 6px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <select id="approval-filter-month" onchange="_applyApprovalFilters()" style="flex:1;min-width:120px;padding:6px 10px;border-radius:8px;border:1px solid var(--gray3);font-size:12px;background:var(--white);">
+        <option value="">Tất cả tháng</option>${monthOpts}
+      </select>
+      <select id="approval-filter-channel" onchange="_applyApprovalFilters()" style="flex:1;min-width:120px;padding:6px 10px;border-radius:8px;border:1px solid var(--gray3);font-size:12px;background:var(--white);">
+        <option value="">Tất cả kênh</option>${channelOpts}
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div id="approval-count-label" style="font-size:13px;color:var(--gray2);font-weight:600;">${plans.length} chờ duyệt${cancelReqs.length > 0 ? ` · <span style="color:#c0392b;">${cancelReqs.length} yêu cầu hủy</span>` : ''}</div>
+      <div class="view-toggle-bar">
+        <button class="view-toggle-btn ${_approvalView==='kanban'?'active':''}" onclick="_approvalView='kanban';_rerenderApproval()">📋 Kanban</button>
+        <button class="view-toggle-btn ${_approvalView==='list'?'active':''}" onclick="_approvalView='list';_rerenderApproval()">☰ Danh sách</button>
+      </div>
     </div>
   </div>`;
 
-  // Store data for re-render
-  window._lastApprovalPlans = plans;
-  window._lastCancelReqs    = cancelReqs;
-  window._lastApprovalEl    = el;
-
   el.innerHTML = html + '<div id="approval-content-area"></div><div class="spacer"></div>';
   _renderApprovalContent(plans, cancelReqs, document.getElementById('approval-content-area'));
+}
+
+function _applyApprovalFilters() {
+  const month   = (document.getElementById('approval-filter-month')  ||{}).value || '';
+  const channel = (document.getElementById('approval-filter-channel')||{}).value || '';
+  const all     = window._lastApprovalPlansAll || [];
+  const filtered = all.filter(p => {
+    const matchMonth   = !month   || (p.date && String(p.date).substring(0,7) === month);
+    const matchChannel = !channel || p.region === channel;
+    return matchMonth && matchChannel;
+  });
+  // filter cancel reqs too
+  const allCancel     = window._lastCancelReqs || [];
+  const filteredCancel= allCancel.filter(p => {
+    const matchMonth   = !month   || (p.date && String(p.date).substring(0,7) === month);
+    const matchChannel = !channel || p.region === channel;
+    return matchMonth && matchChannel;
+  });
+  window._lastApprovalPlans = filtered;
+  const lbl = document.getElementById('approval-count-label');
+  if (lbl) lbl.innerHTML = `${filtered.length} chờ duyệt${filteredCancel.length>0?` · <span style="color:#c0392b;">${filteredCancel.length} yêu cầu hủy</span>`:''}`;
+  _renderApprovalContent(filtered, filteredCancel, document.getElementById('approval-content-area'));
 }
 
 function _rerenderApproval() {
