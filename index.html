@@ -1709,6 +1709,18 @@ function fmtDate(d) {
 const DAY_NAMES_VI = ['Chủ nhật','Thứ 2','Thứ 3','Thứ 4','Thứ 5','Thứ 6','Thứ 7'];
 const DAY_SHORT_VI = ['CN','T2','T3','T4','T5','T6','T7'];
 
+/** Hiển thị ngày — nếu kế hoạch nhiều ngày thì show dải "06/06 → 08/06 (3N)" */
+function fmtDateRange(p) {
+  if (!p) return '—';
+  const nd  = Number(p.numDays) || 1;
+  const end = (p.dateEnd && String(p.dateEnd).substring(0,10) !== String(p.date).substring(0,10)) ? p.dateEnd : null;
+  if (nd > 1 || end) {
+    const endStr = end || addDays(String(p.date).substring(0,10), nd - 1);
+    return `${fmtDate(p.date)} → ${fmtDate(endStr)} (${nd}N)`;
+  }
+  return fmtDate(p.date);
+}
+
 /** Get day of week name from date string */
 function getDayName(dateStr) {
   const d = parseLocalDate(dateStr);
@@ -2397,7 +2409,7 @@ function renderPlansKanban(plans, el) {
           <div class="kc-name">${p.locationName}</div>
           <div class="kc-creator">👤 ${userName(p.creator)}</div>
           <div class="kc-meta">
-            <span>📅 ${fmtDate(p.date)}</span>
+            <span>📅 ${fmtDateRange(p)}</span>
             <span>📍 ${p.region}</span>
           </div>
           <div class="kc-meta"><span>⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}</span></div>
@@ -2546,7 +2558,7 @@ function renderPlanDetail(p) {
       ${dr('Khu vực / Kênh', p.region)}
       ${dr('Người tạo', userName(p.creator))}
       ${dr('Điểm sampling', p.locationName)}
-      ${dr('Ngày thực hiện', fmtDate(p.date))}
+      ${dr('Ngày thực hiện', fmtDateRange(p))}
       ${dr('Thời gian', `${p.timeStart} – ${p.timeEnd}`)}
       ${dr('Người thực hiện', userNames(p.executors))}
       ${dr('Người giám sát', userName(p.supervisor) || p.supervisor || '—')}
@@ -2698,8 +2710,9 @@ async function initCreatePlan(editPlanId = null) {
       planFormData._pgStart  = p.pgStart   || '';
       planFormData._pgEnd    = p.pgEnd     || '';
 
-      // Date: build days array from plan date
+      // Date: build days array across the FULL range (multi-day aware)
       const dateStr = toInputDate(p.date);
+      const endStr  = p.dateEnd ? toInputDate(p.dateEnd) : dateStr;
       planFormData.date          = dateStr;
       planFormData._region       = p.region       || '';
       planFormData._pgCount      = p.pgCount       || 1;
@@ -2709,11 +2722,12 @@ async function initCreatePlan(editPlanId = null) {
       planFormData._estTasters   = p.estTasters    || '';
       planFormData._estSales     = p.estSales      || '';
       planFormData._notes        = p.notes         || '';
-      planFormData.days = [{
-        date:      dateStr,
+      const _editDates = dateRange(dateStr, endStr || dateStr);
+      planFormData.days = _editDates.map(ds => ({
+        date:      ds,
         timeStart: p.timeStart || '09:00',
         timeEnd:   p.timeEnd   || '12:00',
-      }];
+      }));
 
       document.getElementById('create-plan-subtitle').textContent = 'Chỉnh sửa: ' + editPlanId;
       // Change header title for edit mode
@@ -2740,10 +2754,12 @@ async function initCreatePlan(editPlanId = null) {
   if (endEl)   endEl.min   = todayStr;
 
   if (editPlanId && planFormData.days.length > 0) {
-    // ── RESTORE DATE ──
-    const d = planFormData.days[0];
+    // ── RESTORE DATE (multi-day aware) ──
+    const _days = planFormData.days;
+    const d = _days[0];
+    const dEnd = _days[_days.length - 1];
     if (startEl) startEl.value = d.date;
-    if (endEl)   endEl.value   = d.date;
+    if (endEl)   endEl.value   = dEnd.date;
     // Pre-fill location name from cached plan
     const cachedPlan = window._planCache && window._planCache[editPlanId];
     if (cachedPlan) {
@@ -4299,21 +4315,12 @@ function showCalDay(dateStr, day) {
 function fmtTime(t) {
   if (!t) return '—';
   const s = String(t).trim();
-
-  // Already plain HH:mm or H:mm — GAS rowToPlanObject returns this format
-  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) return s.substring(0, 5);
-
-  // ISO timestamp: "1899-12-30T15:06:00.000Z" — Sheet time stored as Date object,
-  // NOT yet through rowToPlanObject's fmtT. Add 7h to recover GMT+7.
-  if (s.includes('T')) {
-    const match = s.match(/T(\d{2}):(\d{2})/);
-    if (match) {
-      let h = parseInt(match[1], 10) + 7;
-      if (h >= 24) h -= 24;
-      return String(h).padStart(2, '0') + ':' + match[2];
-    }
-  }
-
+  // Backend v2.3 trả về "HH:mm" chuẩn 24h (giờ VN) — hiển thị nguyên
+  const hm = s.match(/^(\d{1,2}):(\d{2})/);
+  if (hm) return ('0' + hm[1]).slice(-2) + ':' + hm[2];
+  // Dữ liệu ISO cũ "1899-12-30T07:00..." — lấy đúng phần giờ, KHÔNG cộng bù
+  const iso = s.match(/T(\d{1,2}):(\d{2})/);
+  if (iso) return ('0' + iso[1]).slice(-2) + ':' + iso[2];
   return s.substring(0, 5);
 }
 
@@ -5802,26 +5809,11 @@ async function loadDashboard() {
       return;
     }
 
-    // Rep & Salesman: build stats purely from their own plans + plan details
+    // Rep & Salesman: 1 call duy nhất trả plan KÈM báo cáo (FIX #3 — bỏ N+1, giảm ~20 round-trip)
     try {
-      const myPlansRes = await api('GET', { action:'getMyPlans', userCode: currentUser.code, month });
-      if (!myPlansRes.success) throw new Error(myPlansRes.error || 'API error');
-      const myPlans = myPlansRes.data || [];
-
-      // Fetch plan details (with reports) for completed plans in parallel
-      const completedPlans = myPlans.filter(p =>
-        p.status === 'hoan_thanh' || p.status === 'da_duyet'
-      );
-      const detailPromises = completedPlans.slice(0, 20).map(p =>
-        api('GET', { action:'getPlanDetail', planId: p.id })
-      );
-      const details = await Promise.all(detailPromises);
-
-      // Merge reports into myPlans
-      const plansWithReports = myPlans.map(p => {
-        const detail = details.find(d => d.success && d.data?.id === p.id);
-        return { ...p, reports: detail?.data?.reports || [] };
-      });
+      const res = await api('GET', { action:'getMyPlansWithReports', userCode: currentUser.code, month });
+      if (!res.success) throw new Error(res.error || 'API error');
+      const plansWithReports = res.data || [];
 
       if (isRep) {
         renderRepDashV2(el, plansWithReports, month);
@@ -6079,7 +6071,7 @@ function _renderApprovalKanban(plans, cancelReqs, el) {
           <div class="kc-name">${p.locationName}</div>
           <div class="kc-creator">👤 ${userName(p.creator)}</div>
           <div class="kc-meta">
-            <span>📅 ${fmtDate(p.date)}</span>
+            <span>📅 ${fmtDateRange(p)}</span>
             <span>⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}</span>
             <span>📍 ${p.region}</span>
           </div>
@@ -6172,7 +6164,7 @@ function _renderApprovalList(plans, cancelReqs, el) {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
             <div>
               <div class="approval-card-name">${p.locationName}</div>
-              <div class="approval-card-meta">👤 ${userName(p.creator)} · 📅 ${fmtDate(p.date)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)} · 📍 ${p.region}</div>
+              <div class="approval-card-meta">👤 ${userName(p.creator)} · 📅 ${fmtDateRange(p)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)} · 📍 ${p.region}</div>
               <div style="font-size:11px;color:var(--gray2);">Tạo: ${fmtDateTime(p.createdAt)}</div>
             </div>
             ${statusChip('yeu_cau_huy')}
@@ -6300,7 +6292,7 @@ async function inlineEditModal(planId) {
 
   const body = `
     <div style="font-size:13px;color:var(--gray2);margin-bottom:14px;">
-      <b>${plan.locationName}</b> · ${fmtDate(plan.date)} · Tạo bởi: ${_userNameCache[plan.creator]||plan.creator}
+      <b>${plan.locationName}</b> · ${fmtDateRange(plan)} · Tạo bởi: ${_userNameCache[plan.creator]||plan.creator}
     </div>
 
     <div style="font-size:12px;font-weight:700;color:var(--gray2);margin-bottom:8px;text-transform:uppercase;">📦 Số lượng mẫu</div>
