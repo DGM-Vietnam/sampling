@@ -1721,6 +1721,22 @@ function fmtDateRange(p) {
   return fmtDate(p.date);
 }
 
+/** Lịch giờ riêng từng ngày (HTML). 1 ngày → "07:00 – 11:00". Nhiều ngày → danh sách. */
+function daysScheduleHtml(p) {
+  const days = (p && Array.isArray(p.days)) ? p.days : [];
+  if (days.length <= 1) {
+    const d = days[0] || {};
+    return `${fmtTime(d.timeStart || p.timeStart)} – ${fmtTime(d.timeEnd || p.timeEnd)}`;
+  }
+  return '<div style="display:flex;flex-direction:column;gap:3px;">' + days.map(d => {
+    const dn = getDayName(d.date);
+    return `<div style="display:flex;justify-content:space-between;gap:8px;">
+      <span style="color:var(--gray2);">${dn ? dn + ', ' : ''}${fmtDate(d.date)}</span>
+      <span style="font-weight:600;">${fmtTime(d.timeStart)} – ${fmtTime(d.timeEnd)}</span>
+    </div>`;
+  }).join('') + '</div>';
+}
+
 /** Get day of week name from date string */
 function getDayName(dateStr) {
   const d = parseLocalDate(dateStr);
@@ -2559,7 +2575,7 @@ function renderPlanDetail(p) {
       ${dr('Người tạo', userName(p.creator))}
       ${dr('Điểm sampling', p.locationName)}
       ${dr('Ngày thực hiện', fmtDateRange(p))}
-      ${dr('Thời gian', `${p.timeStart} – ${p.timeEnd}`)}
+      ${dr((p.days && p.days.length > 1) ? 'Lịch theo ngày' : 'Thời gian', daysScheduleHtml(p))}
       ${dr('Người thực hiện', userNames(p.executors))}
       ${dr('Người giám sát', userName(p.supervisor) || p.supervisor || '—')}
     </div></div>
@@ -2597,7 +2613,7 @@ function renderPlanDetail(p) {
     html += `<div class="detail-section-title">Báo cáo (${p.reports.length})</div>`;
     p.reports.forEach(r => {
       html += `<div class="card"><div class="card-body">
-        ${dr('Người BC', r.reporter)} ${dr('Thời gian', fmtDate(r.reportedAt))}
+        ${dr('Người BC', userName(r.reporter))} ${dr('Thời gian', fmtDate(r.reportedAt))}
         ${dr('Số người thử', fmtNum(r.actualTasters))}
         ${dr('Doanh số thực tế', fmtCurrency(r.actualSales))}
         ${dr('Phản hồi KH', r.feedback || '—')}
@@ -2723,11 +2739,15 @@ async function initCreatePlan(editPlanId = null) {
       planFormData._estSales     = p.estSales      || '';
       planFormData._notes        = p.notes         || '';
       const _editDates = dateRange(dateStr, endStr || dateStr);
-      planFormData.days = _editDates.map(ds => ({
-        date:      ds,
-        timeStart: p.timeStart || '09:00',
-        timeEnd:   p.timeEnd   || '12:00',
-      }));
+      const _srcDays = (Array.isArray(p.days) && p.days.length > 0) ? p.days : null;
+      planFormData.days = _editDates.map((ds, i) => {
+        const src = _srcDays ? (_srcDays.find(d => toInputDate(d.date) === ds) || _srcDays[i]) : null;
+        return {
+          date:      ds,
+          timeStart: (src && src.timeStart) || p.timeStart || '09:00',
+          timeEnd:   (src && src.timeEnd)   || p.timeEnd   || '12:00',
+        };
+      });
 
       document.getElementById('create-plan-subtitle').textContent = 'Chỉnh sửa: ' + editPlanId;
       // Change header title for edit mode
