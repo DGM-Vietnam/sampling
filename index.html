@@ -2482,7 +2482,7 @@ function planCard(p) {
       <div style="flex:1;">
         <div class="plan-card-name">${p.locationName}</div>
         <div style="font-size:11px;color:var(--gray2);margin-top:2px;">
-          Tạo: ${fmtDate(p.createdAt)} &nbsp;·&nbsp; TH: ${fmtDate(p.date)}
+          Tạo: ${fmtDate(p.createdAt)} &nbsp;·&nbsp; TH: ${fmtDateRange(p)}
         </div>
       </div>
       <div style="text-align:right;">${statusLabel}</div>
@@ -4491,7 +4491,7 @@ function renderSalesmanDash(el, over, myPlans, month) {
           <div>
             <div class="plan-card-name">${p.locationName}</div>
             <div style="font-size:11px;color:var(--gray2);">
-              📅 ${fmtDate(p.date)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)} · 📍 ${p.region}
+              📅 ${fmtDateRange(p)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)} · 📍 ${p.region}
             </div>
           </div>
           <span class="status-chip status-da_duyet">Đã duyệt ✅</span>
@@ -4515,7 +4515,7 @@ function renderSalesmanDash(el, over, myPlans, month) {
         <div class="plan-card-top">
           <div>
             <div class="plan-card-name">${p.locationName}</div>
-            <div style="font-size:11px;color:var(--gray2);">📅 ${fmtDate(p.date)} · ${rCnt} báo cáo</div>
+            <div style="font-size:11px;color:var(--gray2);">📅 ${fmtDateRange(p)} · ${rCnt} báo cáo</div>
           </div>
           <span class="status-chip status-hoan_thanh">Hoàn thành</span>
         </div>
@@ -5611,7 +5611,7 @@ function renderRepDashV2(el, plans, month) {
           <div>
             <div class="plan-card-name">${p.locationName}</div>
             <div style="font-size:11px;color:var(--gray2);">
-              📅 ${fmtDate(p.date)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}
+              📅 ${fmtDateRange(p)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}
             </div>
           </div>
           <span class="status-chip status-da_duyet">✅ Đã duyệt</span>
@@ -5715,7 +5715,7 @@ function renderSalesmanDashV2(el, plans, month) {
         <div class="plan-card-top">
           <div>
             <div class="plan-card-name">${p.locationName}</div>
-            <div style="font-size:11px;color:var(--gray2);">📅 ${fmtDate(p.date)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}</div>
+            <div style="font-size:11px;color:var(--gray2);">📅 ${fmtDateRange(p)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}</div>
           </div>
           <span class="status-chip status-da_duyet">✅ Đã duyệt</span>
         </div>
@@ -6142,7 +6142,7 @@ function _renderApprovalList(plans, cancelReqs, el) {
               <span style="font-weight:600;color:var(--navy);">👤 ${creatorName}</span>
             </div>
             <div class="approval-card-meta" style="margin-top:2px;">
-              🗓 ${fmtDate(p.date)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)} · 📍 ${p.region}
+              🗓 ${fmtDateRange(p)} · ⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)} · 📍 ${p.region}
             </div>
             <div class="approval-card-meta" style="margin-top:2px;color:var(--gray2);">
               Tạo lúc: ${fmtDateTime(p.createdAt)}
@@ -6436,7 +6436,7 @@ function renderDashPerformance(d, el) {
     const tColor = p.tasterRate >= 100 ? 'var(--green)' : p.tasterRate >= 70 ? 'var(--yellow2)' : 'var(--red)';
     html += `<div class="card"><div class="card-body">
       <div style="font-weight:700;font-size:14px;">${p.locationName}</div>
-      <div style="font-size:12px;color:var(--gray2);margin-bottom:10px;">${fmtDate(p.date)} · ${p.region}</div>
+      <div style="font-size:12px;color:var(--gray2);margin-bottom:10px;">${fmtDateRange(p)} · ${p.region}</div>
       <div class="bar-row">
         <div class="bar-label">${lv?'Người thử':'Tasters'}</div>
         <div class="bar-track"><div class="bar-fill" style="width:${Math.min(p.tasterRate||0,100)}%;background:${tColor};"></div></div>
