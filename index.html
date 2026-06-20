@@ -6,14 +6,14 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.2.1">
+<meta name="version" content="2.4.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#C8102E">
 <title>DGM Sampling Manager</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700;800&display=swap" rel="stylesheet">
 
 <style>
 /* =====================================================
@@ -1981,20 +1981,15 @@ async function loadMasterData(forceRefresh) {
 
   loading(true, 'Đang tải dữ liệu...');
   try {
-    // Load all master data in parallel + include users for name lookup
-    const [p, l, pg, u] = await Promise.all([
-      api('GET', { action:'getProducts' }),
-      api('GET', { action:'getLocations', channel: '' }),
-      api('GET', { action:'getPgPricing' }),
-      api('GET', { action:'getUsers', channel: '', region: '' }),
-    ]);
-    if (p.success)  masterData.products  = p.data;
-    if (l.success)  masterData.locations = l.data;
-    if (pg.success) masterData.pgPricing = pg.data;
-    if (u.success)  {
-      masterData.users = u.data;
+    // FIX #1: gộp 4 lệnh master data thành 1 round-trip getBootstrap (nhanh hơn rõ trên 4G)
+    const b = await api('GET', { action:'getBootstrap', channel: '', region: '' });
+    if (b && b.success) {
+      masterData.products  = b.products  || [];
+      masterData.locations = b.locations || [];
+      masterData.pgPricing = b.pgPricing || [];
+      masterData.users     = b.users     || [];
       // Pre-populate user name cache
-      u.data.forEach(usr => { _userNameCache[usr.code] = usr.name; });
+      masterData.users.forEach(usr => { _userNameCache[usr.code] = usr.name; });
     }
 
     // Cache for 30 mins
@@ -2459,18 +2454,12 @@ function planCard(p) {
   const reportLabel = p.status === 'hoan_thanh' ? '📊 Thêm báo cáo' : '📊 Báo cáo';
   const reportCount = (p.reports || []).length;
 
-  // PG cost estimate using cached rates
+  // FIX #3: dùng tiền PG đã chốt từ backend (p.pgCost) — không tính lại ở client,
+  // nên không còn lệ thuộc thời điểm tải bảng giá và không lệch ngày lễ/tết.
   let pgCostDisplay = '';
-  if (p.hiresPg && p.pgCount > 0 && p.pgHours > 0) {
-    const ch = (p.region||'').toUpperCase().startsWith('GT') ? 'GT' : 'MT';
-    const pricing = masterData.pgPricing || [];
-    const rateRow = pricing.find(r =>
-      (r.channel === ch || r.channel === 'ALL') && !r.isHoliday
-    );
-    const rate    = rateRow ? rateRow.ratePerPg : (ch === 'GT' ? 50000 : 45000);
+  if (p.hiresPg && p.pgCount > 0 && p.pgHours > 0 && p.pgCost > 0) {
     const numDays = p.numDays || 1;
-    pgCostDisplay = fmtCurrency(p.pgCount * p.pgHours * rate * numDays)
-      + (numDays > 1 ? ` (${numDays}N)` : '');
+    pgCostDisplay = fmtCurrency(p.pgCost) + (numDays > 1 ? ` (${numDays}N)` : '');
   }
 
   const statusLabel = p.status === 'hoan_thanh' && reportCount > 0
@@ -2583,6 +2572,8 @@ function renderPlanDetail(p) {
     <div class="detail-section-title">Sản phẩm & Hoạt động</div>
     <div class="card"><div class="card-body">
       ${dr('Sản phẩm sampling', sampleNames || '—')}
+      ${dr('Hình thức dùng thử', p.servingMethod || '—')}
+      ${(p.dishes && p.dishes.length) ? dr('Món ăn demo', p.dishes.map(d => d.ten).filter(Boolean).join(', ') || '—') : ''}
       ${dr('Có chương trình KM', p.hasPromo ? '✅ Có' : 'Không')}
       ${dr('On/Off post', p.postType || '—')}
       ${dr('Ra ụ', p.hasKiosk ? '✅ Có' : 'Không')}
@@ -2690,7 +2681,7 @@ async function initCreatePlan(editPlanId = null) {
 
   // Always reset first
   planFormData = {
-    samples: [], dishes: [], gifts: [], executors: [], supervisors: [],
+    samples: [], dishes: [], gifts: [], executors: [], supervisors: [], servingMethods: [],
     days: [], date: '', hiresPg: false, hasPromo: false, hasKiosk: false,
     hasInvoice: false, hasGift: false, _pgHours: 0, _pgRate: 0, _pgStart: '', _pgEnd: ''
   };
@@ -2711,6 +2702,11 @@ async function initCreatePlan(editPlanId = null) {
       planFormData.samples   = p.samples   || [];
       planFormData.dishes    = p.dishes    || [];
       planFormData.gifts     = p.gifts     || [];
+      // #5: dựng lại hình thức dùng thử từ chuỗi đã lưu ("Nấu/chế biến + Khui nắp dùng thử")
+      planFormData.servingMethods = [];
+      const _sm = String(p.servingMethod || '');
+      if (_sm.includes('Nấu'))  planFormData.servingMethods.push('nau');
+      if (_sm.includes('Khui')) planFormData.servingMethods.push('khui');
       planFormData.executors = (p.executors || []).map(String);
       planFormData.supervisorCode = p.supervisor || '';
       planFormData.supervisorName = userName(p.supervisor) || p.supervisor || '';
@@ -2931,6 +2927,9 @@ function restoreFormState() {
   if (tastersEl  && planFormData._estTasters) tastersEl.value   = planFormData._estTasters;
   if (salesEl    && planFormData._estSales)   salesEl.value     = planFormData._estSales;
   if (notesEl    && planFormData._notes)      notesEl.value     = planFormData._notes;
+
+  // ── #5: Hình thức dùng thử + danh sách món ──
+  applyServingMethodsUI();
 
   // Recalculate costs
   calcCost();
@@ -3493,6 +3492,19 @@ function renderCreatePlanForm() {
           <div id="product-list">${productList}</div>
         </div>
         <div class="form-field">
+          <label class="required">Hình thức dùng thử (có thể chọn cả 2)</label>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div class="toggle-wrap" onclick="toggleServingMethod('nau')" style="cursor:pointer;">
+              <span class="toggle-label">🍳 Nấu / chế biến món ăn</span>
+              <div class="toggle" id="toggle-serve-nau"></div>
+            </div>
+            <div class="toggle-wrap" onclick="toggleServingMethod('khui')" style="cursor:pointer;">
+              <span class="toggle-label">🥫 Khui nắp dùng thử trực tiếp</span>
+              <div class="toggle" id="toggle-serve-khui"></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-field" id="dishes-field" style="display:none;">
           <label>Món ăn demo (nhập từng món)</label>
           <div id="dishes-list" style="display:flex;flex-direction:column;gap:6px;"></div>
           <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addDish()">＋ Thêm món</button>
@@ -3679,17 +3691,48 @@ function updateSample(ma) {
   if (idx >= 0) planFormData.samples[idx].so_luong = qty;
 }
 
-function addDish() {
+function addDish(initial) {
   const el = document.getElementById('dishes-list');
   const idx = planFormData.dishes.length;
-  planFormData.dishes.push({ ten: '', tu_mau: '' });
+  planFormData.dishes.push({ ten: (initial && initial.ten) || '', tu_mau: (initial && initial.tu_mau) || '' });
   const div = document.createElement('div');
   div.style.cssText = 'display:flex;gap:6px;align-items:center;';
   div.innerHTML = `
-    <input class="form-input" type="text" placeholder="Tên món ăn..." style="flex:1;"
+    <input class="form-input" type="text" placeholder="Tên món ăn..." style="flex:1;" value="${(initial && initial.ten) ? String(initial.ten).replace(/"/g,'&quot;') : ''}"
       oninput="planFormData.dishes[${idx}].ten = this.value">
     <button class="btn btn-secondary btn-sm" style="width:36px;padding:0;font-size:18px;" onclick="this.parentElement.remove();planFormData.dishes.splice(${idx},1)">×</button>`;
   el.appendChild(div);
+}
+
+/** #5: bật/tắt 1 hình thức dùng thử (cho phép chọn cả 2). */
+function toggleServingMethod(method) {
+  planFormData.servingMethods = planFormData.servingMethods || [];
+  const i = planFormData.servingMethods.indexOf(method);
+  if (i >= 0) planFormData.servingMethods.splice(i, 1);
+  else        planFormData.servingMethods.push(method);
+  const tog = document.getElementById('toggle-serve-' + method);
+  if (tog) tog.classList.toggle('on', planFormData.servingMethods.includes(method));
+  const df = document.getElementById('dishes-field');
+  if (df) df.style.display = planFormData.servingMethods.includes('nau') ? 'block' : 'none';
+}
+
+/** #5: áp trạng thái hình thức dùng thử + danh sách món lên UI (dùng khi sửa kế hoạch). */
+function applyServingMethodsUI() {
+  const methods = planFormData.servingMethods || [];
+  ['nau','khui'].forEach(m => {
+    const tog = document.getElementById('toggle-serve-' + m);
+    if (tog) tog.classList.toggle('on', methods.includes(m));
+  });
+  const df = document.getElementById('dishes-field');
+  if (df) df.style.display = methods.includes('nau') ? 'block' : 'none';
+  // Dựng lại các dòng món đã lưu
+  const list = document.getElementById('dishes-list');
+  if (list && Array.isArray(planFormData.dishes) && planFormData.dishes.length) {
+    const saved = planFormData.dishes.slice();
+    planFormData.dishes = [];
+    list.innerHTML = '';
+    saved.forEach(d => addDish(d));
+  }
 }
 
 function addGift() {
@@ -3795,7 +3838,8 @@ async function submitPlan() {
     hasKiosk:      planFormData.hasKiosk,
     boothType:     document.getElementById('f-booth-type')?.value,
     samples:       planFormData.samples,
-    dishes:        planFormData.dishes,
+    servingMethods: planFormData.servingMethods || [],
+    dishes:        (planFormData.servingMethods || []).includes('nau') ? planFormData.dishes : [],
     hasGift:       planFormData.hasGift,
     gifts:         planFormData.hasGift ? [{
       so_luong:  parseInt(document.getElementById('f-gift-qty')?.value) || 0,
@@ -3812,6 +3856,11 @@ async function submitPlan() {
   btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
   loading(true, 'Đang lưu kế hoạch...');
   try {
+    if (!data.servingMethods || data.servingMethods.length === 0) {
+      showToast('Vui lòng chọn hình thức dùng thử (Nấu hoặc Khui nắp)', 'error');
+      btn.disabled = false; btn.textContent = '📤 Gửi kế hoạch để duyệt'; loading(false);
+      return;
+    }
     const action = currentPlanId ? 'updatePlan' : 'createPlan';
     const res = await api('POST', { action, data, userCode: currentUser.code, planId: currentPlanId });
     if (res.success) {
@@ -6519,10 +6568,10 @@ async function initCancelPlan(planId, planStatus) {
     [
       {
         label: immediateCancel ? '🚫 Xác nhận hủy' : '📤 Gửi yêu cầu hủy',
-        cls:   'btn btn-danger',
-        onclick: `executeCancelPlan('${planId}', ${immediateCancel})`,
+        cls:   'btn-danger',
+        action: `executeCancelPlan('${planId}', ${immediateCancel})`,
       },
-      { label: 'Đóng', cls: 'btn btn-outline', onclick: 'closeModal()' },
+      { label: 'Đóng', cls: 'btn-outline', action: 'closeModal()' },
     ]
   );
 
@@ -6641,7 +6690,7 @@ function showScreen(name) {
 
 (function init() {
   // ── PWA Version Check — force reload when new version deployed ──
-  const CURRENT_VERSION = '2.2.1';
+  const CURRENT_VERSION = '2.4.0';
   const storedVersion   = localStorage.getItem('dgm_app_version');
   if (storedVersion && storedVersion !== CURRENT_VERSION) {
     // New version detected — clear caches and reload
