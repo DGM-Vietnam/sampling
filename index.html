@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.4.0">
+<meta name="version" content="2.5.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -2521,6 +2521,11 @@ function renderPlanDetail(p) {
   const isMgrOrMkt  = isManager || isMarketing;
   const canEdit = (p.creator === currentUser.code || isMgrOrMkt) &&
     (p.status === 'cho_duyet' || p.status === 'yeu_cau_chinh_sua');
+  // Điều chỉnh giới hạn: plan ĐÃ DUYỆT & chưa qua ngày kết thúc (đang chờ/đang chạy)
+  const _adjEnd   = p.dateEnd ? toInputDate(p.dateEnd) : toInputDate(p.date);
+  const _adjToday = toInputDate(new Date().toISOString().split('T')[0]);
+  const canAdjust = (p.creator === currentUser.code || isMgrOrMkt) &&
+    p.status === 'da_duyet' && (!_adjEnd || _adjEnd >= _adjToday);
   const isExecutor = (p.executors||[]).includes(currentUser.code) || p.creator === currentUser.code;
   const canReport  = (p.status === 'da_duyet' || p.status === 'hoan_thanh') && (isExecutor || isMgrOrMkt);
   const reportLabel = p.status === 'hoan_thanh' ? '📊 Thêm báo cáo' : '📊 Báo cáo';
@@ -2624,6 +2629,7 @@ function renderPlanDetail(p) {
   // Actions
   html += `<div style="display:flex;gap:8px;padding:0 16px;flex-wrap:wrap;">`;
   if (canEdit) html += `<button class="btn btn-outline" style="flex:1;min-width:120px;" onclick="initCreatePlan('${p.id}')">✏️ Chỉnh sửa</button>`;
+  if (canAdjust) html += `<button class="btn btn-outline" style="flex:1;min-width:120px;" onclick="initAdjustPlan('${p.id}')">🔧 Điều chỉnh</button>`;
   if (canReport) {
     const bgStyle = p.status === 'hoan_thanh' ? 'background:var(--teal);' : '';
     html += `<button class="btn btn-primary" style="flex:1;min-width:120px;${bgStyle}" onclick="initReport('${p.id}')">${reportLabel}</button>`;
@@ -6651,6 +6657,187 @@ async function rejectCancelPlan(planId) {
   finally { loading(false); }
 }
 
+// =====================================================
+// ĐIỀU CHỈNH GIỚI HẠN (plan đã duyệt / đang chạy)
+// Chỉ sửa: người thực hiện · ngày · giờ từng ngày · số PG (chỉ giảm)
+// =====================================================
+let adjustData = {};
+
+async function initAdjustPlan(planId) {
+  loading(true, 'Đang tải kế hoạch...');
+  let p;
+  try {
+    const res = await api('GET', { action: 'getPlanDetail', planId });
+    if (!res.success) { showToast(res.error || 'Không tải được kế hoạch', 'error'); return; }
+    p = res.data;
+  } catch (e) { showToast('Lỗi kết nối', 'error'); return; }
+  finally { loading(false); }
+
+  const startStr = toInputDate(p.date);
+  const endStr   = p.dateEnd ? toInputDate(p.dateEnd) : startStr;
+  const srcDays  = (Array.isArray(p.days) && p.days.length) ? p.days : null;
+  const dates    = dateRange(startStr, endStr < startStr ? startStr : endStr);
+
+  adjustData = {
+    planId,
+    maxPg:     Number(p.pgCount) || 0,
+    pgCount:   Number(p.pgCount) || 0,
+    executors: (p.executors || []).map(String),
+    days: dates.map((ds, i) => {
+      const s = srcDays ? (srcDays.find(d => toInputDate(d.date) === ds) || srcDays[i]) : null;
+      return {
+        date:      ds,
+        timeStart: (s && s.timeStart) || p.timeStart || '09:00',
+        timeEnd:   (s && s.timeEnd)   || p.timeEnd   || '12:00',
+      };
+    }),
+  };
+  renderAdjustModal(startStr, endStr);
+}
+
+function renderAdjustModal(startStr, endStr) {
+  const users = (masterData.users || []).filter(u =>
+    u.role === 'Salesman' || u.role === 'Sales Representative');
+  const chips = users.map(u =>
+    `<div class="chip-option ${adjustData.executors.includes(String(u.code)) ? 'selected' : ''}"
+      data-code="${u.code}" onclick="toggleAdjustExec(this,'${u.code}')">${u.name}</div>`).join('') ||
+    '<span style="font-size:12px;color:var(--gray2);">Không có nhân sự</span>';
+
+  const body = `
+    <div style="max-height:62vh;overflow:auto;text-align:left;padding:2px;">
+      <div style="display:flex;gap:8px;">
+        <div class="form-field" style="flex:1;">
+          <label style="font-size:12px;">Ngày bắt đầu</label>
+          <input class="form-input" type="date" id="adj-date-start" value="${startStr}" onchange="onAdjustDateChange()">
+        </div>
+        <div class="form-field" style="flex:1;">
+          <label style="font-size:12px;">Ngày kết thúc</label>
+          <input class="form-input" type="date" id="adj-date-end" value="${endStr}" onchange="onAdjustDateChange()">
+        </div>
+      </div>
+      <div class="form-field">
+        <label style="font-size:12px;">Giờ diễn ra từng ngày</label>
+        <div id="adj-days"></div>
+      </div>
+      <div class="form-field">
+        <label style="font-size:12px;">Người thực hiện</label>
+        <div class="chip-select" id="adj-exec-chips">${chips}</div>
+      </div>
+      <div class="form-field">
+        <label style="font-size:12px;">Số PG thực hiện — hiện tại <b>${adjustData.maxPg}</b> (chỉ được giảm/về 0)</label>
+        <input class="form-input" type="number" id="adj-pg" min="0" max="${adjustData.maxPg}"
+          value="${adjustData.pgCount}" oninput="onAdjustPgInput()">
+        <div id="adj-pg-hint" style="font-size:11px;color:var(--gray2);margin-top:4px;"></div>
+      </div>
+      <div class="form-field">
+        <label style="font-size:12px;">Lý do điều chỉnh (gửi người duyệt)</label>
+        <textarea class="form-input" id="adj-reason" rows="2" placeholder="VD: 1 PG báo bận đột xuất, dời sang ngày khác..."></textarea>
+      </div>
+      <div class="info-banner" style="margin:4px 0 0;">ℹ️ Lưu xong kế hoạch chuyển về <b>"chờ duyệt"</b> để Trade/Manager duyệt lại.</div>
+    </div>`;
+
+  showModal('🔧 Điều chỉnh kế hoạch', body, [
+    { label: '💾 Lưu & gửi duyệt lại', cls: 'btn-primary', action: `saveAdjustPlan('${adjustData.planId}')` },
+    { label: 'Đóng',                   cls: 'btn-outline', action: 'closeModal()' },
+  ]);
+  renderAdjustDays();
+  onAdjustPgInput();
+}
+
+function renderAdjustDays() {
+  const el = document.getElementById('adj-days');
+  if (!el) return;
+  el.innerHTML = (adjustData.days || []).map((d, i) => {
+    const dt = parseLocalDate(d.date);
+    const wd = DAY_NAMES_VI[dt.getDay()];
+    return `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+      <div style="min-width:104px;font-size:12px;font-weight:600;color:var(--navy);">${wd}, ${fmtDate(d.date)}</div>
+      <input class="form-input" type="time" value="${d.timeStart}" style="padding:8px;flex:1;"
+        oninput="adjustData.days[${i}].timeStart=this.value">
+      <span style="color:var(--gray2);">–</span>
+      <input class="form-input" type="time" value="${d.timeEnd}" style="padding:8px;flex:1;"
+        oninput="adjustData.days[${i}].timeEnd=this.value">
+    </div>`;
+  }).join('');
+}
+
+function onAdjustDateChange() {
+  const s = document.getElementById('adj-date-start').value;
+  let e   = document.getElementById('adj-date-end').value || s;
+  if (!s) return;
+  if (e < s) { e = s; document.getElementById('adj-date-end').value = s; }
+  const dates = dateRange(s, e);
+  const prev = {};
+  (adjustData.days || []).forEach(d => { prev[d.date] = { timeStart: d.timeStart, timeEnd: d.timeEnd }; });
+  adjustData.days = dates.map(ds => ({
+    date:      ds,
+    timeStart: (prev[ds] && prev[ds].timeStart) || '09:00',
+    timeEnd:   (prev[ds] && prev[ds].timeEnd)   || '12:00',
+  }));
+  renderAdjustDays();
+}
+
+function toggleAdjustExec(el, code) {
+  const i = adjustData.executors.indexOf(String(code));
+  if (i >= 0) { adjustData.executors.splice(i, 1); el.classList.remove('selected'); }
+  else        { adjustData.executors.push(String(code)); el.classList.add('selected'); }
+}
+
+function onAdjustPgInput() {
+  const el = document.getElementById('adj-pg');
+  const hint = document.getElementById('adj-pg-hint');
+  if (!el) return;
+  let v = Number(el.value);
+  if (isNaN(v) || v < 0) v = 0;
+  if (v > adjustData.maxPg) { v = adjustData.maxPg; el.value = v; showToast(`Chỉ được giảm — tối đa ${adjustData.maxPg} PG`, 'error'); }
+  else el.value = v;
+  adjustData.pgCount = v;
+  if (hint) {
+    hint.textContent = v === 0
+      ? '→ Không thuê PG (chi phí PG = 0)'
+      : (v < adjustData.maxPg ? `Giảm ${adjustData.maxPg - v} PG so với ban đầu` : 'Giữ nguyên số PG');
+  }
+}
+
+async function saveAdjustPlan(planId) {
+  if (!adjustData.executors || adjustData.executors.length === 0) {
+    showToast('Chọn ít nhất 1 người thực hiện', 'error'); return;
+  }
+  const pg = Number(document.getElementById('adj-pg').value);
+  if (pg > adjustData.maxPg) { showToast('Số PG không được tăng', 'error'); return; }
+  for (const d of (adjustData.days || [])) {
+    if (d.timeStart && d.timeEnd && d.timeStart >= d.timeEnd) {
+      showToast(`Giờ ngày ${fmtDate(d.date)} chưa hợp lệ`, 'error'); return;
+    }
+  }
+  const reason = (document.getElementById('adj-reason')?.value || '').trim();
+  loading(true, 'Đang lưu điều chỉnh...');
+  try {
+    const res = await api('POST', {
+      action: 'adjustPlan',
+      planId,
+      data: {
+        date:    adjustData.days[0].date,
+        dateEnd: adjustData.days[adjustData.days.length - 1].date,
+        days:    adjustData.days,
+        executors: adjustData.executors,
+        pgCount: pg,
+        adjustReason: reason,
+      },
+      userCode: currentUser.code,
+    });
+    if (res.success) {
+      Object.keys(_apiCache).forEach(k => delete _apiCache[k]); // xóa cache để thấy trạng thái mới
+      closeModal();
+      showToast('✅ ' + (res.message || 'Đã điều chỉnh, chờ duyệt lại'), 'success');
+      viewPlanDetail(planId);
+    } else {
+      showToast(res.error || 'Lỗi khi lưu', 'error');
+    }
+  } catch (e) { showToast('Lỗi kết nối', 'error'); }
+  finally { loading(false); }
+}
+
 function showModal(title, bodyHtml, actions=[]) {
   const overlay = document.getElementById('modal-overlay');
   const content = document.getElementById('modal-content');
@@ -6690,7 +6877,7 @@ function showScreen(name) {
 
 (function init() {
   // ── PWA Version Check — force reload when new version deployed ──
-  const CURRENT_VERSION = '2.4.0';
+  const CURRENT_VERSION = '2.5.0';
   const storedVersion   = localStorage.getItem('dgm_app_version');
   if (storedVersion && storedVersion !== CURRENT_VERSION) {
     // New version detected — clear caches and reload
