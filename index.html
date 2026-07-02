@@ -1200,6 +1200,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 .kanban-col-header.col-pending  { background: #fff8e0; color: #7c5c00; border-bottom: 2px solid var(--yellow2); }
 .kanban-col-header.col-approved { background: #e6f2fb; color: var(--teal);  border-bottom: 2px solid var(--teal); }
 .kanban-col-header.col-done     { background: #e7f5ed; color: var(--green); border-bottom: 2px solid var(--green); }
+.kanban-col-header.col-cancelled{ background: #f3f3f3; color: #888; border-bottom: 2px solid #aaa; }
 
 .kanban-col-count {
   background: rgba(0,0,0,0.10);
@@ -1893,6 +1894,10 @@ async function api(method, params) {
     if (method === 'GET') {
       const ck = _cacheKey(params);
       _apiCache[ck] = { data, ts: Date.now() };
+    } else {
+      // v2.6 #2 FIX: mọi thao tác ghi (hủy, duyệt, tạo, sửa, báo cáo...) → xóa sạch cache
+      // để getMyPlans/getPendingApprovals luôn trả trạng thái MỚI, không còn plan "ma".
+      Object.keys(_apiCache).forEach(k => delete _apiCache[k]);
     }
     return data;
   } catch (err) {
@@ -2372,11 +2377,11 @@ async function loadMyPlans() {
 }
 
 function renderPlansKanban(plans, el) {
-  // 4 columns: Đã lên plan | Chờ duyệt | Đã duyệt / Duyệt có sửa | Hoàn thành
+  // v2.6 #3 — 5 columns: Đã lên plan | Chờ duyệt | Đã duyệt | Hoàn thành | Đã hủy
   const cols = [
     {
       key: 'created', label: '📝 Đã lên plan', cls: 'col-created',
-      statuses: ['yeu_cau_chinh_sua', 'tu_choi', 'yeu_cau_huy', 'da_huy'],
+      statuses: ['yeu_cau_chinh_sua', 'tu_choi'],
     },
     {
       key: 'pending', label: '⏳ Chờ duyệt', cls: 'col-pending',
@@ -2389,6 +2394,10 @@ function renderPlansKanban(plans, el) {
     {
       key: 'done', label: '🏁 Hoàn thành', cls: 'col-done',
       statuses: ['hoan_thanh'],
+    },
+    {
+      key: 'cancelled', label: '🚫 Đã hủy', cls: 'col-cancelled',
+      statuses: ['yeu_cau_huy', 'da_huy'],
     },
   ];
 
@@ -2416,6 +2425,12 @@ function renderPlansKanban(plans, el) {
           return `${prod ? prod.ten : s.ma} ×${s.so_luong}`;
         }).join(', ') || '—';
 
+        const isCancelCol = col.key === 'cancelled';
+        const cancelNote = isCancelCol
+          ? (String(p.notes||'').split('\n').reverse().find(l => l.toLowerCase().includes('hủy')) || '').replace(/\s*\[prev:[a-z_]+\]\s*/g, '')
+          : '';
+        const canConfirmCancel = isCancelCol && p.status === 'yeu_cau_huy' && isManagerRole2;
+
         html += `<div class="kanban-card kc-${p.status}" onclick="viewPlanDetail('${p.id}')">
           <div class="kc-name">${p.locationName}</div>
           <div class="kc-creator">👤 ${userName(p.creator)}</div>
@@ -2426,7 +2441,14 @@ function renderPlansKanban(plans, el) {
           <div class="kc-meta"><span>⏰ ${fmtTime(p.timeStart)}–${fmtTime(p.timeEnd)}</span></div>
           <div class="kc-products">${sampleList}</div>
           ${p.hiresPg && p.pgCount > 0 ? `<div class="kc-meta" style="margin-top:3px;"><span>👥 ${p.pgCount} PG · ${p.pgHours||'?'}h/ngày</span></div>` : ''}
+          ${isCancelCol ? `<div style="margin-top:4px;">${statusChip(p.status)}</div>` : ''}
+          ${isCancelCol && cancelNote ? `<div style="background:${p.status==='yeu_cau_huy'?'#fde8e8':'#f0f0f0'};border-radius:5px;padding:5px 7px;font-size:10px;color:${p.status==='yeu_cau_huy'?'#c0392b':'#888'};margin-top:5px;">${cancelNote.substring(0,90)}${cancelNote.length>90?'…':''}</div>` : ''}
           <div class="kc-cost">${fmtCurrency(p.totalEstCost)}</div>
+          ${canConfirmCancel ? `
+          <div class="kc-actions" onclick="event.stopPropagation()">
+            <button class="kc-btn kc-btn-approve" onclick="confirmCancelPlan('${p.id}')">✅ Xác nhận hủy</button>
+            <button class="kc-btn kc-btn-edit" onclick="rejectCancelPlan('${p.id}')">↩ Giữ lại</button>
+          </div>` : ''}
           ${(canApproveThis || canReport2) ? `
           <div class="kc-actions" onclick="event.stopPropagation()">
             ${canApproveThis ? `
@@ -2578,7 +2600,11 @@ function renderPlanDetail(p) {
     <div class="card"><div class="card-body">
       ${dr('Sản phẩm sampling', sampleNames || '—')}
       ${dr('Hình thức dùng thử', p.servingMethod || '—')}
-      ${(p.dishes && p.dishes.length) ? dr('Món ăn demo', p.dishes.map(d => d.ten).filter(Boolean).join(', ') || '—') : ''}
+      ${(p.dishes && p.dishes.length) ? dr('Món ăn sampling', p.dishes.map(d => {
+        if (!d || !d.ten) return '';
+        const prod = d.tu_mau ? masterData.products.find(pr => pr.ma === d.tu_mau) : null;
+        return d.ten + (prod ? ' (mẫu: ' + prod.ten + ')' : (d.tu_mau ? ' (mẫu: ' + d.tu_mau + ')' : ''));
+      }).filter(Boolean).join(', ') || '—') : ''}
       ${dr('Có chương trình KM', p.hasPromo ? '✅ Có' : 'Không')}
       ${dr('On/Off post', p.postType || '—')}
       ${dr('Ra ụ', p.hasKiosk ? '✅ Có' : 'Không')}
@@ -3511,9 +3537,15 @@ function renderCreatePlanForm() {
           </div>
         </div>
         <div class="form-field" id="dishes-field" style="display:none;">
-          <label>Món ăn demo (nhập từng món)</label>
+          <label>Món ăn sampling (đồng bộ với SP mẫu đã chọn)</label>
+          <div style="font-size:11px;color:var(--gray2);margin:-2px 0 6px;">Nhập tên món + chọn SP mẫu dùng cho món đó. Hãy chọn sản phẩm mẫu ở trên trước.</div>
           <div id="dishes-list" style="display:flex;flex-direction:column;gap:6px;"></div>
           <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addDish()">＋ Thêm món</button>
+        </div>
+        <div class="form-field" id="khui-note" style="display:none;">
+          <div style="background:#eef6ee;border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:8px 10px;font-size:12px;color:var(--gray);">
+            🥫 Khui nắp dùng thử trực tiếp — <b>không chế biến</b>. Không cần nhập món ăn.
+          </div>
         </div>
       </div>
     </div>
@@ -3689,6 +3721,7 @@ function toggleProduct(ma) {
     document.getElementById(`qty-${ma}`).value = '';
   }
   calcCost();
+  refreshDishSampleOptions(); // v2.6 #1: đồng bộ dropdown món ăn với SP mẫu
 }
 
 function updateSample(ma) {
@@ -3702,12 +3735,53 @@ function addDish(initial) {
   const idx = planFormData.dishes.length;
   planFormData.dishes.push({ ten: (initial && initial.ten) || '', tu_mau: (initial && initial.tu_mau) || '' });
   const div = document.createElement('div');
-  div.style.cssText = 'display:flex;gap:6px;align-items:center;';
+  div.setAttribute('data-dish', '1');
+  div.style.cssText = 'display:flex;flex-direction:column;gap:5px;border:1px solid var(--gray3);border-radius:8px;padding:8px;background:#fafbfc;';
   div.innerHTML = `
-    <input class="form-input" type="text" placeholder="Tên món ăn..." style="flex:1;" value="${(initial && initial.ten) ? String(initial.ten).replace(/"/g,'&quot;') : ''}"
-      oninput="planFormData.dishes[${idx}].ten = this.value">
-    <button class="btn btn-secondary btn-sm" style="width:36px;padding:0;font-size:18px;" onclick="this.parentElement.remove();planFormData.dishes.splice(${idx},1)">×</button>`;
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input class="form-input" type="text" placeholder="Tên món ăn..." style="flex:1;" value="${(initial && initial.ten) ? String(initial.ten).replace(/"/g,'&quot;') : ''}"
+        oninput="planFormData.dishes[${idx}].ten = this.value">
+      <button class="btn btn-secondary btn-sm" style="width:36px;padding:0;font-size:18px;" onclick="removeDish(this, ${idx})">×</button>
+    </div>
+    <select class="form-input dish-sample-select" data-dish-idx="${idx}" style="font-size:12px;padding:6px 10px;"
+      onchange="planFormData.dishes[${idx}].tu_mau = this.value">
+      ${_dishSampleOptions((initial && initial.tu_mau) || '')}
+    </select>`;
   el.appendChild(div);
+}
+
+/** v2.6 #1: xóa món — đánh dấu _removed (không splice để tránh lệch index các dòng còn lại). */
+function removeDish(btn, idx) {
+  const row = btn.closest('div[data-dish]');
+  if (row) row.remove();
+  if (planFormData.dishes[idx]) planFormData.dishes[idx]._removed = true;
+}
+
+/** v2.6 #1: options dropdown "món này dùng mẫu SP nào" — đồng bộ theo SP mẫu đã chọn. */
+function _dishSampleOptions(selected) {
+  const opts = ['<option value="">— Chọn SP mẫu cho món này —</option>'];
+  (planFormData.samples || []).forEach(s => {
+    const prod = masterData.products.find(p => p.ma === s.ma);
+    const name = prod ? prod.ten : s.ma;
+    opts.push(`<option value="${s.ma}" ${String(selected) === String(s.ma) ? 'selected' : ''}>${name}</option>`);
+  });
+  if ((planFormData.samples || []).length === 0)
+    opts.push('<option value="" disabled>(Chưa chọn sản phẩm mẫu nào)</option>');
+  return opts.join('');
+}
+
+/** v2.6 #1: refresh dropdown SP mẫu của TẤT CẢ món khi thay đổi danh sách mẫu. */
+function refreshDishSampleOptions() {
+  document.querySelectorAll('.dish-sample-select').forEach(sel => {
+    const i = Number(sel.getAttribute('data-dish-idx'));
+    let cur = (planFormData.dishes[i] && planFormData.dishes[i].tu_mau) || '';
+    // nếu SP mẫu đã bị bỏ chọn → reset liên kết
+    if (cur && !(planFormData.samples || []).some(s => String(s.ma) === String(cur))) {
+      cur = '';
+      if (planFormData.dishes[i]) planFormData.dishes[i].tu_mau = '';
+    }
+    sel.innerHTML = _dishSampleOptions(cur);
+  });
 }
 
 /** #5: bật/tắt 1 hình thức dùng thử (cho phép chọn cả 2). */
@@ -3720,6 +3794,8 @@ function toggleServingMethod(method) {
   if (tog) tog.classList.toggle('on', planFormData.servingMethods.includes(method));
   const df = document.getElementById('dishes-field');
   if (df) df.style.display = planFormData.servingMethods.includes('nau') ? 'block' : 'none';
+  const kn = document.getElementById('khui-note');
+  if (kn) kn.style.display = (planFormData.servingMethods.includes('khui') && !planFormData.servingMethods.includes('nau')) ? 'block' : 'none';
 }
 
 /** #5: áp trạng thái hình thức dùng thử + danh sách món lên UI (dùng khi sửa kế hoạch). */
@@ -3731,6 +3807,8 @@ function applyServingMethodsUI() {
   });
   const df = document.getElementById('dishes-field');
   if (df) df.style.display = methods.includes('nau') ? 'block' : 'none';
+  const kn = document.getElementById('khui-note');
+  if (kn) kn.style.display = (methods.includes('khui') && !methods.includes('nau')) ? 'block' : 'none';
   // Dựng lại các dòng món đã lưu
   const list = document.getElementById('dishes-list');
   if (list && Array.isArray(planFormData.dishes) && planFormData.dishes.length) {
@@ -3845,7 +3923,10 @@ async function submitPlan() {
     boothType:     document.getElementById('f-booth-type')?.value,
     samples:       planFormData.samples,
     servingMethods: planFormData.servingMethods || [],
-    dishes:        (planFormData.servingMethods || []).includes('nau') ? planFormData.dishes : [],
+    dishes:        (planFormData.servingMethods || []).includes('nau')
+                     ? (planFormData.dishes || []).filter(d => d && !d._removed && String(d.ten||'').trim())
+                         .map(d => ({ ten: String(d.ten).trim(), tu_mau: d.tu_mau || '' }))
+                     : [],
     hasGift:       planFormData.hasGift,
     gifts:         planFormData.hasGift ? [{
       so_luong:  parseInt(document.getElementById('f-gift-qty')?.value) || 0,
@@ -6004,14 +6085,18 @@ async function getCreatorName(userCode) {
 let _approvalView = 'kanban'; // 'kanban' | 'list'
 
 async function renderDashApproval(plans, el) {
-  // Also load cancel requests and show them as a separate section
-  let cancelReqs = [];
+  // Also load cancel requests + recently cancelled plans (v2.6 #3)
+  let cancelReqs = [], cancelled = [];
   try {
-    const cRes = await api('GET', { action: 'getCancelRequests' });
+    const [cRes, dRes] = await Promise.all([
+      api('GET', { action: 'getCancelRequests' }),
+      api('GET', { action: 'getCancelledPlans' }),
+    ]);
     if (cRes.success) cancelReqs = cRes.data || [];
+    if (dRes.success) cancelled  = dRes.data || [];
   } catch(e) {}
 
-  if ((!plans || plans.length === 0) && cancelReqs.length === 0) {
+  if ((!plans || plans.length === 0) && cancelReqs.length === 0 && cancelled.length === 0) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Không có kế hoạch chờ duyệt</div><div class="empty-sub">Tất cả đã được xử lý 🎉</div></div>';
     const badge = document.getElementById('approval-badge');
     if (badge) badge.style.display = 'none';
@@ -6034,6 +6119,7 @@ async function renderDashApproval(plans, el) {
   window._lastApprovalPlans    = plans;
   window._lastApprovalPlansAll = plans;  // full unfiltered set
   window._lastCancelReqs       = cancelReqs;
+  window._lastCancelled        = cancelled;   // v2.6 #3
   window._lastApprovalEl       = el;
 
   // Build channel options from plans
@@ -6058,7 +6144,7 @@ async function renderDashApproval(plans, el) {
       </select>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;">
-      <div id="approval-count-label" style="font-size:13px;color:var(--gray2);font-weight:600;">${plans.length} chờ duyệt${cancelReqs.length > 0 ? ` · <span style="color:#c0392b;">${cancelReqs.length} yêu cầu hủy</span>` : ''}</div>
+      <div id="approval-count-label" style="font-size:13px;color:var(--gray2);font-weight:600;">${plans.length} chờ duyệt${cancelReqs.length > 0 ? ` · <span style="color:#c0392b;">${cancelReqs.length} yêu cầu hủy</span>` : ''}${cancelled.length > 0 ? ` · <span style="color:#888;">${cancelled.length} đã hủy</span>` : ''}</div>
       <div class="view-toggle-bar">
         <button class="view-toggle-btn ${_approvalView==='kanban'?'active':''}" onclick="_approvalView='kanban';_rerenderApproval()">📋 Kanban</button>
         <button class="view-toggle-btn ${_approvalView==='list'?'active':''}" onclick="_approvalView='list';_rerenderApproval()">☰ Danh sách</button>
@@ -6067,7 +6153,7 @@ async function renderDashApproval(plans, el) {
   </div>`;
 
   el.innerHTML = html + '<div id="approval-content-area"></div><div class="spacer"></div>';
-  _renderApprovalContent(plans, cancelReqs, document.getElementById('approval-content-area'));
+  _renderApprovalContent(plans, cancelReqs, document.getElementById('approval-content-area'), cancelled);
 }
 
 function _applyApprovalFilters() {
@@ -6087,9 +6173,15 @@ function _applyApprovalFilters() {
     return matchMonth && matchChannel;
   });
   window._lastApprovalPlans = filtered;
+  const allCancelled      = window._lastCancelled || [];
+  const filteredCancelled = allCancelled.filter(p => {
+    const matchMonth   = !month   || (p.date && String(p.date).substring(0,7) === month);
+    const matchChannel = !channel || p.region === channel;
+    return matchMonth && matchChannel;
+  });
   const lbl = document.getElementById('approval-count-label');
-  if (lbl) lbl.innerHTML = `${filtered.length} chờ duyệt${filteredCancel.length>0?` · <span style="color:#c0392b;">${filteredCancel.length} yêu cầu hủy</span>`:''}`;
-  _renderApprovalContent(filtered, filteredCancel, document.getElementById('approval-content-area'));
+  if (lbl) lbl.innerHTML = `${filtered.length} chờ duyệt${filteredCancel.length>0?` · <span style="color:#c0392b;">${filteredCancel.length} yêu cầu hủy</span>`:''}${filteredCancelled.length>0?` · <span style="color:#888;">${filteredCancelled.length} đã hủy</span>`:''}`;
+  _renderApprovalContent(filtered, filteredCancel, document.getElementById('approval-content-area'), filteredCancelled);
 }
 
 function _rerenderApproval() {
@@ -6099,23 +6191,25 @@ function _rerenderApproval() {
   el.querySelectorAll('.view-toggle-btn').forEach(btn => {
     btn.classList.toggle('active', btn.textContent.includes('Kanban') ? _approvalView==='kanban' : _approvalView==='list');
   });
-  _renderApprovalContent(window._lastApprovalPlans||[], window._lastCancelReqs||[], document.getElementById('approval-content-area'));
+  _renderApprovalContent(window._lastApprovalPlans||[], window._lastCancelReqs||[], document.getElementById('approval-content-area'), window._lastCancelled||[]);
 }
 
-function _renderApprovalContent(plans, cancelReqs, el) {
+function _renderApprovalContent(plans, cancelReqs, el, cancelled) {
   if (!el) return;
+  cancelled = cancelled || window._lastCancelled || [];
   if (_approvalView === 'kanban') {
-    _renderApprovalKanban(plans, cancelReqs, el);
+    _renderApprovalKanban(plans, cancelReqs, el, cancelled);
   } else {
-    _renderApprovalList(plans, cancelReqs, el);
+    _renderApprovalList(plans, cancelReqs, el, cancelled);
   }
 }
 
-function _renderApprovalKanban(plans, cancelReqs, el) {
-  // Build a small kanban: Chờ duyệt | Cần chỉnh sửa | Yêu cầu hủy
+function _renderApprovalKanban(plans, cancelReqs, el, cancelled) {
+  // v2.6 #3: Chờ duyệt | Yêu cầu hủy | Đã hủy (lưu ý các plan đã hủy/thay đổi)
   const cols = [
-    { key:'cho_duyet',      label:'⏳ Chờ duyệt',       cls:'col-pending',  plans: plans },
-    { key:'yeu_cau_huy',    label:'🚫 Yêu cầu hủy',     cls:'col-created',  plans: cancelReqs },
+    { key:'cho_duyet',      label:'⏳ Chờ duyệt',       cls:'col-pending',   plans: plans },
+    { key:'yeu_cau_huy',    label:'🚫 Yêu cầu hủy',     cls:'col-created',   plans: cancelReqs },
+    { key:'da_huy',         label:'🗑 Đã hủy',           cls:'col-cancelled', plans: cancelled || [] },
   ];
 
   let html = '<div class="kanban-board">';
@@ -6137,9 +6231,10 @@ function _renderApprovalKanban(plans, cancelReqs, el) {
           return `${prod ? prod.ten : s.ma} ×${s.so_luong}`;
         }).join(', ') || '—';
 
-        const isCancel = col.key === 'yeu_cau_huy';
-        const cancelNote = isCancel
-          ? ((p.notes||'').split('\n').reverse().find(l => l.includes('yêu cầu hủy') || l.includes('hủy')) || '')
+        const isCancel    = col.key === 'yeu_cau_huy';
+        const isCancelled = col.key === 'da_huy';
+        const cancelNote = (isCancel || isCancelled)
+          ? ((p.notes||'').split('\n').reverse().find(l => l.toLowerCase().includes('hủy')) || '').replace(/\s*\[prev:[a-z_]+\]\s*/g, '')
           : '';
 
         html += `<div class="kanban-card kc-${p.status}" onclick="${isCancel ? `viewPlanDetail('${p.id}')` : `viewPlanDetail('${p.id}')`}">
@@ -6152,9 +6247,9 @@ function _renderApprovalKanban(plans, cancelReqs, el) {
           </div>
           <div class="kc-products">${sampleList}</div>
           ${p.hiresPg && p.pgCount > 0 ? `<div class="kc-meta" style="margin-top:3px;"><span>👥 ${p.pgCount} PG · ${p.pgHours||'?'}h/ngày</span></div>` : ''}
-          ${isCancel && cancelNote ? `<div style="background:#fde8e8;border-radius:5px;padding:5px 7px;font-size:10px;color:#c0392b;margin-top:5px;">${cancelNote.substring(0,80)}${cancelNote.length>80?'…':''}</div>` : ''}
+          ${(isCancel || isCancelled) && cancelNote ? `<div style="background:${isCancelled?'#f0f0f0':'#fde8e8'};border-radius:5px;padding:5px 7px;font-size:10px;color:${isCancelled?'#888':'#c0392b'};margin-top:5px;">${cancelNote.substring(0,80)}${cancelNote.length>80?'…':''}</div>` : ''}
           <div class="kc-cost">${fmtCurrency(p.totalEstCost)}</div>
-          <div class="kc-actions" onclick="event.stopPropagation()">
+          ${isCancelled ? '' : `<div class="kc-actions" onclick="event.stopPropagation()">
             ${isCancel ? `
               <button class="kc-btn kc-btn-approve" onclick="confirmCancelPlan('${p.id}')">✅ Xác nhận hủy</button>
               <button class="kc-btn kc-btn-edit" onclick="rejectCancelPlan('${p.id}')">↩ Giữ lại</button>
@@ -6163,7 +6258,7 @@ function _renderApprovalKanban(plans, cancelReqs, el) {
               <button class="kc-btn kc-btn-edit" onclick="inlineEditModal('${p.id}')">✏️ Sửa</button>
               <button class="kc-btn kc-btn-reject" onclick="rejectModal('${p.id}')">❌</button>
             `}
-          </div>
+          </div>`}
         </div>`;
       });
     }
@@ -6173,7 +6268,7 @@ function _renderApprovalKanban(plans, cancelReqs, el) {
   el.innerHTML = html;
 }
 
-function _renderApprovalList(plans, cancelReqs, el) {
+function _renderApprovalList(plans, cancelReqs, el, cancelled) {
   const isDesk = window.innerWidth >= 768;
   let html = '';
   if (isDesk) html += '<div class="approval-list-desktop">';
@@ -6250,6 +6345,33 @@ function _renderApprovalList(plans, cancelReqs, el) {
           <button class="btn btn-danger" style="flex:1;" onclick="confirmCancelPlan('${p.id}')">✅ Xác nhận hủy</button>
           <button class="btn btn-outline" style="flex:1;" onclick="rejectCancelPlan('${p.id}')">↩️ Giữ lại</button>
           <button class="btn btn-outline" style="padding:10px 12px;" onclick="viewPlanDetail('${p.id}')">👁</button>
+        </div>
+      </div>`;
+    });
+    if (isDesk) html += '</div>';
+  }
+
+  // v2.6 #3: section "Đã hủy" — lưu ý các plan đã hủy gần đây (chỉ xem)
+  cancelled = cancelled || [];
+  if (cancelled.length > 0) {
+    html += `<div style="padding:12px 16px 4px;font-size:13px;color:#888;font-weight:700;">
+      🗑 ${cancelled.length} kế hoạch đã hủy gần đây (lưu ý)
+    </div>`;
+    if (isDesk) html += '<div class="approval-list-desktop">';
+    cancelled.forEach(p => {
+      const cNote = ((p.notes||'').split('\n').reverse().find(l => l.toLowerCase().includes('hủy')) || '')
+        .replace(/\s*\[prev:[a-z_]+\]\s*/g, '');
+      html += `<div class="approval-card" style="border-top:3px solid #aaa;opacity:0.85;" onclick="viewPlanDetail('${p.id}')">
+        <div class="approval-card-top">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+            <div>
+              <div class="approval-card-name" style="text-decoration:line-through;color:#888;">${p.locationName}</div>
+              <div class="approval-card-meta">👤 ${userName(p.creator)} · 📅 ${fmtDateRange(p)} · 📍 ${p.region}</div>
+              <div style="font-size:11px;color:var(--gray2);">Cập nhật: ${fmtDateTime(p.updatedAt)}</div>
+            </div>
+            ${statusChip('da_huy')}
+          </div>
+          ${cNote ? `<div style="background:#f0f0f0;border-radius:6px;padding:8px 10px;font-size:12px;color:#888;margin-top:4px;">📝 ${cNote}</div>` : ''}
         </div>
       </div>`;
     });
@@ -6614,8 +6736,15 @@ async function executeCancelPlan(planId, isImmediate) {
         ? `✅ Kế hoạch ${planId} đã được hủy.`
         : `📤 Đã gửi yêu cầu hủy kế hoạch ${planId}. Chờ xác nhận.`;
       showToast(msg, 'success', 4000);
+      // v2.6 #2 FIX: xóa cache plan cũ để mọi danh sách hiển thị đúng trạng thái mới
+      if (window._planCache) delete window._planCache[planId];
       // Reload plan detail to reflect new status
       await viewPlanDetail(planId);
+      // Nếu màn danh sách kế hoạch đang mở phía sau → refresh luôn
+      try {
+        const plansScreen = document.getElementById('screen-plans');
+        if (plansScreen && plansScreen.classList.contains('active')) loadMyPlans();
+      } catch(e) {}
     } else {
       showToast(res.error || 'Có lỗi xảy ra', 'error');
     }
@@ -6634,6 +6763,7 @@ async function confirmCancelPlan(planId) {
     const res = await api('POST', { action: 'confirmCancel', planId, userCode: currentUser.code });
     if (res.success) {
       showToast(`✅ Đã xác nhận hủy kế hoạch ${planId}`, 'success', 3500);
+      if (window._planCache) delete window._planCache[planId]; // v2.6 #2
       // Refresh approval list + plan detail
       if (document.getElementById('screen-dashboard').classList.contains('active')) {
         loadApprovalDirect();
@@ -6651,6 +6781,7 @@ async function rejectCancelPlan(planId) {
     const res = await api('POST', { action: 'rejectCancel', planId, userCode: currentUser.code });
     if (res.success) {
       showToast(`Đã từ chối yêu cầu hủy — kế hoạch tiếp tục`, 'success', 3000);
+      if (window._planCache) delete window._planCache[planId]; // v2.6 #2
       loadApprovalDirect();
     } else showToast(res.error || 'Lỗi', 'error');
   } catch(e) { showToast('Lỗi kết nối', 'error'); }
