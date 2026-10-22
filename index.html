@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.7.0">
+<meta name="version" content="2.8.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1511,6 +1511,18 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 .kc-note.cancel { background: #fde8e8; color: #c0392b; }
 .kc-note.void { background: #f0f0f0; color: #888; }
 .kanban-card.kc-da_huy .kc-name { text-decoration: line-through; color: #888; }
+
+/* v2.8 — Khối duyệt ngay trong chi tiết kế hoạch */
+.detail-approve-box {
+  background: #fff8e0; border: 1.5px solid var(--yellow2); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 12px;
+}
+.detail-approve-head { font-size: 13px; font-weight: 700; color: #7c5c00; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.detail-approve-head b { color: var(--red); }
+.detail-approve-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.detail-approve-actions .btn { padding: 11px 8px; font-size: 13px; }
+@media (min-width: 768px) { .detail-approve-actions { grid-template-columns: repeat(4, 1fr); } }
+.detail-refreshing { font-size: 11px; opacity: .75; }
 </style>
 </head>
 <body>
@@ -1997,7 +2009,7 @@ function populateMonthFilters() {
 const _apiCache = {};
 const _apiInflight = {};
 const _API_TTL = {
-  getDashboardKPI: 180000, getApprovalBoard: 30000, getUsers: 300000,
+  getBootstrap: 600000, getDashboardKPI: 180000, getApprovalBoard: 30000, getUsers: 300000,
   getMyPlans: 30000, getMyPlansWithReports: 60000, getPlanDetail: 20000,
   getCalendar: 60000, getPendingApprovals: 30000, getCancelRequests: 30000, getCancelledPlans: 30000,
   getDashboardOverview: 30000, getDashboardPerformance: 30000,
@@ -2299,7 +2311,8 @@ function setupHome() {
   document.getElementById('home-role').textContent = u.role + (u.region !== 'Nationwide' ? ' · ' + u.region : '');
   populateMonthFilters();
   renderHomeMenu();
-  loadHomeStats();
+  const _deskMgr = (u.role === 'Sales Manager' || u.role === 'Marketing') && window.innerWidth >= 768;
+  if (!_deskMgr) loadHomeStats(); // v2.8: desktop Manager vào thẳng Dashboard KPI
   buildSidebarNav();
   setTimeout(() => syncApprovalBadgeToSidebar(), 1500); // v2.7: 1 call getApprovalBoard
   // Manager on desktop → go straight to dashboard
@@ -2606,28 +2619,45 @@ function planCard(p) {
 // PLAN DETAIL
 // =====================================================
 async function viewPlanDetail(planId) {
-  loading(true, 'Đang tải...');
+  // v2.8: nhớ màn trước để nút ← quay đúng chỗ (Phê duyệt / Kế hoạch / Lịch)
+  const prev = sessionStorage.getItem('dgm_screen');
+  if (prev && prev !== 'plan-detail') window._detailReturn = prev;
+  // v2.8: có sẵn dữ liệu từ danh sách → hiện NGAY, tải bản đầy đủ ở nền
+  const cached = window._planCache && window._planCache[planId];
+  if (cached) { renderPlanDetail(cached, true); showScreen('plan-detail'); }
+  else loading(true, 'Đang tải...');
   try {
     const res = await api('GET', { action:'getPlanDetail', planId });
-    if (!res.success) { showToast(res.error, 'error'); return; }
+    if (!res.success) { if (!cached) showToast(res.error, 'error'); return; }
     const p = res.data;
-    // Cache for other screens to use location name
     if (!window._planCache) window._planCache = {};
     window._planCache[planId] = p;
-    renderPlanDetail(p);
-    showScreen('plan-detail');
-  } catch(e) { showToast('Lỗi kết nối', 'error'); }
+    const onThis = window._currentDetailId === planId &&
+      document.getElementById('screen-plan-detail').classList.contains('active');
+    if (!cached) { renderPlanDetail(p); showScreen('plan-detail'); }
+    else if (onThis) renderPlanDetail(p);
+  } catch(e) { if (!cached) showToast('Lỗi kết nối', 'error'); }
   finally { loading(false); }
 }
 
-function renderPlanDetail(p) {
+function goBackFromDetail() {
+  const r = window._detailReturn || 'plans';
+  if (r === 'dashboard')     { showScreen('dashboard'); loadDashboard(); }
+  else if (r === 'calendar') { showScreen('calendar'); renderCalendar(); }
+  else if (r === 'home')     { showScreen('home'); }
+  else                       { showScreen('plans'); loadMyPlans(); }
+}
+
+function renderPlanDetail(p, isPreview) {
+  window._currentDetailId = p.id;
   document.getElementById('plan-detail-title').textContent = p.locationName;
   const reportCnt = (p.reports||[]).length;
-  document.getElementById('plan-detail-id').textContent =
-    fmtDate(p.date) + ' · ' + p.id + (reportCnt > 0 ? ` · ${reportCnt} báo cáo` : '');
+  document.getElementById('plan-detail-id').innerHTML =
+    fmtDate(p.date) + ' · ' + p.id + (reportCnt > 0 ? ` · ${reportCnt} báo cáo` : '') +
+    (isPreview ? ' <span class="detail-refreshing">· ⟳ đang cập nhật…</span>' : '');
 
   const back = document.getElementById('plan-detail-back');
-  back.onclick = () => showScreen('plans');
+  back.onclick = goBackFromDetail;
 
   const isManager   = currentUser.role === 'Sales Manager';
   const isMarketing = currentUser.role === 'Marketing';
@@ -2645,7 +2675,7 @@ function renderPlanDetail(p) {
 
   // Check if there are differences between plan and approval
   let approvalDiff = '';
-  if (p.approval && p.approval.result === 'da_duyet') {
+  if (p.approval && p.approval.result === 'da_duyet' && (p.status === 'da_duyet' || p.status === 'hoan_thanh')) {
     const origPg = p.pgCount, appPg = p.approval.pgCount;
     if (String(origPg) !== String(appPg)) {
       approvalDiff += `<div class="info-banner" style="margin-top:0;margin-bottom:8px;">⚠️ Số PG được duyệt thay đổi: <b>${origPg} → ${appPg}</b></div>`;
@@ -2657,11 +2687,28 @@ function renderPlanDetail(p) {
     return `${prod ? prod.ten : s.ma} × ${s.so_luong}`;
   }).join(', ');
 
+  // v2.8: Manager/Marketing duyệt ngay trong màn chi tiết
+  const canApproveHere = isMgrOrMkt && p.status === 'cho_duyet';
+  const approveBox = canApproveHere ? `
+    <div class="detail-approve-box">
+      <div class="detail-approve-head">
+        <span>⏳ Kế hoạch đang chờ duyệt</span>
+        <span>Tổng chi phí: <b>${fmtCurrency(p.totalEstCost)}</b></span>
+      </div>
+      <div class="detail-approve-actions">
+        <button class="btn btn-green" onclick="quickApprove('${p.id}')">✅ Duyệt</button>
+        <button class="btn btn-secondary" onclick="inlineEditModal('${p.id}')">✏️ Điều chỉnh & duyệt</button>
+        <button class="btn btn-outline" onclick="detailRequestEdit('${p.id}')">💬 Yêu cầu sửa</button>
+        <button class="btn btn-danger" onclick="rejectModal('${p.id}')">❌ Từ chối</button>
+      </div>
+    </div>` : '';
+
   let html = `<div class="spacer" style="height:8px;"></div>
   <div class="detail-section">
     ${approvalDiff}
     ${statusChip(p.status)}
-    <div class="spacer" style="height:10px;"></div>`;
+    <div class="spacer" style="height:10px;"></div>
+    ${approveBox}`;
 
   // If needs edit — show reason
   if (p.approval && p.approval.result === 'yeu_cau_chinh_sua') {
@@ -2745,6 +2792,7 @@ function renderPlanDetail(p) {
 
   // Actions
   html += `<div style="display:flex;gap:8px;padding:0 16px;flex-wrap:wrap;">`;
+  if (canApproveHere) html += `<button class="btn btn-green" style="flex:1;min-width:120px;" onclick="quickApprove('${p.id}')">✅ Duyệt</button>`;
   if (canEdit) html += `<button class="btn btn-outline" style="flex:1;min-width:120px;" onclick="initCreatePlan('${p.id}')">✏️ Chỉnh sửa</button>`;
   if (canAdjust) html += `<button class="btn btn-outline" style="flex:1;min-width:120px;" onclick="initAdjustPlan('${p.id}')">🔧 Điều chỉnh</button>`;
   if (canReport) {
@@ -5061,6 +5109,21 @@ function _renderApprovalList(plans, cancelReqs, el, cancelled) {
   el.innerHTML = html;
 }
 
+/** v2.8: sau duyệt/từ chối/yêu cầu sửa → làm tươi ĐÚNG màn đang mở + badge. */
+function afterApprovalAction(planId) {
+  if (window._planCache) delete window._planCache[planId];
+  const active = document.querySelector('.screen.active');
+  const id = active ? active.id : '';
+  if (id === 'screen-plan-detail') viewPlanDetail(planId);
+  else if (id === 'screen-plans')  loadMyPlans();
+  else                             loadDashboard();
+  loadApprovalBadge();
+}
+function detailRequestEdit(planId) {
+  const p = (window._planCache && window._planCache[planId]) || {};
+  commentModal(planId, String(p.locationName || planId).replace(/'/g, "\\'"));
+}
+
 async function quickApprove(planId) {
   if (!confirm('Duyệt kế hoạch ' + planId + ' (không điều chỉnh)?')) return;
   loading(true, 'Đang duyệt...');
@@ -5068,8 +5131,7 @@ async function quickApprove(planId) {
     const res = await api('POST', { action:'approvePlan', planId, data:{}, userCode: currentUser.code });
     if (res.success) {
       showToast('✅ Đã duyệt thành công!', 'success');
-      loadDashboard();
-      loadApprovalBadge();
+      afterApprovalAction(planId);
     } else showToast(res.error, 'error');
   } catch(e) { showToast('Lỗi kết nối', 'error'); }
   finally { loading(false); }
@@ -5092,7 +5154,7 @@ async function doReject(planId) {
   closeModal(); loading(true, 'Đang xử lý...');
   try {
     const res = await api('POST', { action:'rejectPlan', planId, reason, userCode: currentUser.code });
-    if (res.success) { showToast('Đã từ chối kế hoạch', 'success'); loadDashboard(); loadApprovalBadge(); }
+    if (res.success) { showToast('Đã từ chối kế hoạch', 'success'); afterApprovalAction(planId); }
     else showToast(res.error, 'error');
   } catch(e) { showToast('Lỗi kết nối', 'error'); }
   finally { loading(false); }
@@ -5118,7 +5180,7 @@ async function doComment(planId) {
   closeModal(); loading(true);
   try {
     const res = await api('POST', { action:'requestEdit', planId, notes: '[Comment] ' + notes, userCode: currentUser.code });
-    if (res.success) { showToast('Đã lưu comment thành công', 'success'); loadDashboard(); }
+    if (res.success) { showToast('Đã gửi yêu cầu chỉnh sửa', 'success'); afterApprovalAction(planId); }
     else showToast(res.error, 'error');
   } catch(e) { showToast('Lỗi kết nối', 'error'); }
   finally { loading(false); }
@@ -5269,8 +5331,7 @@ async function doInlineApprove(planId) {
     });
     if (res.success) {
       showToast('✅ Đã duyệt kế hoạch thành công!', 'success');
-      loadDashboard();
-      loadApprovalBadge();
+      afterApprovalAction(planId);
     } else showToast(res.error || 'Có lỗi xảy ra', 'error');
   } catch(e) { showToast('Lỗi kết nối', 'error'); }
   finally { loading(false); }
@@ -6040,8 +6101,7 @@ async function rejectCancelPlan(planId) {
     const res = await api('POST', { action: 'rejectCancel', planId, userCode: currentUser.code });
     if (res.success) {
       showToast(`Đã từ chối yêu cầu hủy — kế hoạch tiếp tục`, 'success', 3000);
-      if (window._planCache) delete window._planCache[planId]; // v2.6 #2
-      loadApprovalDirect();
+      afterApprovalAction(planId);
     } else showToast(res.error || 'Lỗi', 'error');
   } catch(e) { showToast('Lỗi kết nối', 'error'); }
   finally { loading(false); }
@@ -6267,7 +6327,7 @@ function showScreen(name) {
 
 (function init() {
   // ── PWA Version Check — force reload when new version deployed ──
-  const CURRENT_VERSION = '2.7.0';
+  const CURRENT_VERSION = '2.8.0';
   const storedVersion   = localStorage.getItem('dgm_app_version');
   if (storedVersion && storedVersion !== CURRENT_VERSION) {
     // New version detected — clear caches and reload
@@ -6305,6 +6365,8 @@ function showScreen(name) {
       });
     } catch(e) { sessionStorage.removeItem('dgm_user'); }
   }
+  // v2.8: tải trước master data trong lúc người dùng gõ mật khẩu
+  if (!saved) api('GET', { action:'getBootstrap', channel: '', region: '' }).catch(() => {});
   // Set today date min
   const today = new Date().toISOString().split('T')[0];
   document.querySelectorAll('input[type=date]').forEach(el => el.min = today);
