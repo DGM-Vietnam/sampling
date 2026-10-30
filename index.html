@@ -4891,7 +4891,7 @@ function kpiPeriod(v) {
   const [t, a] = String(v).split(':'); const cur = ymNow();
   if (t === 'c') {  // v2.10: toàn chương trình 'c:yyyy-mm|yyyy-mm'
     const [from, to0] = a.split('|'); const to = to0 > cur ? cur : to0;
-    return { from, to, label: 'Toàn chương trình (' + ymShort(from) + ' → ' + ymShort(to0) + ')', prev: { from: '0000-00', to: '0000-00' }, noPrev: true, prevLabel: '' };
+    return { from, to, toFull: to0, label: 'Toàn chương trình (' + ymShort(from) + ' → ' + ymShort(to0) + ')', prev: { from: '0000-00', to: '0000-00' }, noPrev: true, prevLabel: '' };
   }
   if (t === 'm') return { from: a, to: a, label: 'Tháng ' + ymLabel(a), prev: { from: ymAdd(a, -1), to: ymAdd(a, -1) }, prevLabel: 'so với tháng trước' };
   if (t === 'q') {
@@ -5181,17 +5181,29 @@ function kpiCampaignSection(P, plansCur, camp) {
     </div>` : '<div class="k-empty">Chưa có ca nào được báo cáo trong kỳ</div>';
 
   // ── 3. Tiến độ pilot theo vùng ──
-  const today = ymNow();
+  const today = ymNow(), todayD = localToday();
   const months = ymList(P.from, P.to).filter(m => m <= today);
   const regions = ['Bắc', 'Trung', 'Nam'].filter(v => kpiState.vg === 'all' || kpiState.vg === v);
-  const runDays = {};   // 'm|vg' → {planId|day}
-  list.forEach(s => { const p = planMap[s.id]; const k = s.m + '|' + p.vg; (runDays[k] = runDays[k] || {})[s.id + '|' + s.d] = 1; });
-  // kế hoạch đã hoàn thành nhưng chưa có số liệu theo ca → vẫn tính số ngày
-  live.filter(p => p.st === 'hoan_thanh' && !list.some(s => s.id === p.id)).forEach(p => {
-    for (let i = 0; i < p.nd; i++) { const d = addDays(p.d, i); const k = d.substring(0, 7) + '|' + p.vg; (runDays[k] = runDays[k] || {})[p.id + '|' + d] = 1; }
+  // Kế hoạch trong TOÀN kỳ (kể cả tháng tới, kể cả chờ duyệt / từ chối / hủy) — đếm theo ngày (1 ngày = 1 buổi)
+  const pTo = P.toFull || P.to;
+  const allPlans = (kpiData.plans || []).filter(p => kpiInScope(p) && p.m >= ymAdd(P.from, -1) && p.m <= pTo);
+  const allShifts = kpiData.shifts.filter(s => planMap[s.id] && kpiInScope(planMap[s.id]));
+  const shiftPlan = {}; allShifts.forEach(s => { shiftPlan[s.id] = 1; });
+  const runDays = {};   // 'm|vg' → {planId|day} — ngày ĐÃ THỰC HIỆN
+  const addRun = (id, d, vg) => { const k = d.substring(0, 7) + '|' + vg; (runDays[k] = runDays[k] || {})[id + '|' + d] = 1; };
+  allShifts.forEach(s => addRun(s.id, s.d, planMap[s.id].vg));
+  // Kế hoạch không có số liệu theo ca: đã hoàn thành → tính đủ số ngày; đã duyệt & có báo cáo → tính các ngày đã qua
+  allPlans.filter(p => !shiftPlan[p.id] && (p.st === 'hoan_thanh' || (p.st === 'da_duyet' && p.rp > 0))).forEach(p => {
+    for (let i = 0; i < p.nd; i++) { const d = addDays(p.d, i); if (p.st === 'hoan_thanh' || d <= todayD) addRun(p.id, d, p.vg); }
   });
-  const planned = {};
-  live.forEach(p => { for (let i = 0; i < p.nd; i++) { const d = addDays(p.d, i); const k = d.substring(0, 7) + '|' + p.vg; planned[k] = (planned[k] || 0) + 1; } });
+  const cnt = {};       // 'm|vg' → {kh, cho, duyet, khac}
+  allPlans.forEach(p => { for (let i = 0; i < p.nd; i++) {
+    const d = addDays(p.d, i), k = d.substring(0, 7) + '|' + p.vg, c = cnt[k] || (cnt[k] = { kh: 0, cho: 0, duyet: 0, loai: 0 });
+    if (KPI_VOID.includes(p.st)) { c.loai++; continue; }
+    c.kh++;
+    if (KPI_ACTIVE.includes(p.st)) c.duyet++; else c.cho++;
+  } });
+  const planned = {}; Object.keys(cnt).forEach(k => { planned[k] = cnt[k].kh; });
   const prog = months.length ? `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr><th class="k-l">Tháng</th>${regions.map(v => `<th>Miền ${v}<br><small>tối thiểu ${K.pilotDays[v] || 0} ngày</small></th>`).join('')}</tr></thead><tbody>
     ${months.slice().reverse().map(m => `<tr><td class="k-l">${ymShort(m)}${m === today ? ' <small>(đang chạy)</small>' : ''}</td>${regions.map(v => {
       const run = Object.keys(runDays[m + '|' + v] || {}).length, min = K.pilotDays[v] || 0, pl = planned[m + '|' + v] || 0;
@@ -5204,6 +5216,41 @@ function kpiCampaignSection(P, plansCur, camp) {
     ${kpiBox('🔻 Phễu bán hàng xe đẩy', 'Tổng các ca đã báo cáo trong kỳ.', funnel, 'k-ncd')}
     ${kpiBox('📆 Tiến độ pilot theo vùng', 'Ngày đã chạy (có báo cáo bán hàng hoặc đã hoàn thành) so với số ngày pilot tối thiểu mỗi tháng.', prog, 'k-ncd')}
   </div>`;
+
+  // ── 3b. Kế hoạch & thực hiện theo tháng × vùng ──
+  const mAll = ymList(P.from, pTo);
+  const vgAll = ['Bắc', 'Trung', 'Nam', 'Toàn quốc'].filter(v => (kpiState.vg === 'all' || kpiState.vg === v) &&
+    (v !== 'Toàn quốc' || mAll.some(m => cnt[m + '|' + v] || runDays[m + '|' + v])));
+  const cell = (m, v) => {
+    const c = cnt[m + '|' + v] || { kh: 0, cho: 0, duyet: 0, loai: 0 }, th = Object.keys(runDays[m + '|' + v] || {}).length;
+    return { kh: c.kh, cho: c.cho, duyet: c.duyet, loai: c.loai, th };
+  };
+  const sum = arr => arr.reduce((a, x) => ({ kh: a.kh + x.kh, cho: a.cho + x.cho, duyet: a.duyet + x.duyet, loai: a.loai + x.loai, th: a.th + x.th }), { kh: 0, cho: 0, duyet: 0, loai: 0, th: 0 });
+  const sm = t => `<small style="display:block;white-space:nowrap;">${t}</small>`;
+  const tds = (x, min, future) => {
+    const r = x.duyet ? x.th / x.duyet : null;
+    const minTxt = min ? sm('tối thiểu ' + min) : '';
+    const thCls = future ? '' : min ? (x.th >= min ? 'k-good' : x.th >= min / 2 ? 'k-warn' : 'k-bad') : rateCls(r);
+    return `<td style="border-left:2px solid var(--gray3);">${x.kh ? '<b>' + fN(x.kh) + '</b>' : '<span class="k-dim">·</span>'}${x.cho ? sm(x.cho + ' chờ duyệt') : ''}${x.loai ? sm(x.loai + ' hủy/từ chối') : ''}</td>
+      <td>${x.duyet ? fN(x.duyet) : '<span class="k-dim">·</span>'}</td>
+      <td>${(x.th || x.duyet) ? `<span class="k-pill ${thCls}">${fN(x.th)}</span>${minTxt}` : '<span class="k-dim">·</span>'}</td>`;
+  };
+  const head1 = vgAll.map(v => `<th colspan="3" style="text-align:center;border-left:2px solid var(--gray3);">${v === 'Toàn quốc' ? 'Toàn quốc' : 'Miền ' + v}</th>`).join('') +
+    `<th colspan="3" style="text-align:center;border-left:2px solid var(--gray3);">Tổng</th>`;
+  const head2 = vgAll.concat(['_']).map(() => `<th style="border-left:2px solid var(--gray3);">Lên KH</th><th>Đã duyệt</th><th>Thực hiện</th>`).join('');
+  const monthRows = mAll.slice().reverse().map(m => {
+    const cs = vgAll.map(v => cell(m, v));
+    const tag = m === today ? ' <small>(đang chạy)</small>' : m > today ? ' <small>(sắp tới)</small>' : '';
+    const fut = m > today;
+    return `<tr><td class="k-l">${ymShort(m)}${tag}</td>${cs.map((x, i) => tds(x, K.pilotDays[vgAll[i]] || 0, fut)).join('')}${tds(sum(cs), 0, fut)}</tr>`;
+  }).join('');
+  const colTot = vgAll.map(v => sum(mAll.map(m => cell(m, v))));
+  const totRow = `<tr class="k-total"><td class="k-l">Tổng</td>${colTot.map(x => `<td style="border-left:2px solid rgba(255,255,255,.25);">${fN(x.kh)}</td><td>${fN(x.duyet)}</td><td>${fN(x.th)}</td>`).join('')}
+    ${(() => { const t = sum(colTot); return `<td style="border-left:2px solid rgba(255,255,255,.25);">${fN(t.kh)}</td><td>${fN(t.duyet)}</td><td>${fN(t.th)}</td>`; })()}</tr>`;
+  h += kpiBox('🗓️ Kế hoạch & thực hiện theo tháng × vùng',
+    'Đếm theo <b>buổi</b> (1 ngày = 1 buổi), tính cả các tháng sắp tới. Lên KH = mọi kế hoạch còn hiệu lực (chờ duyệt + đã duyệt + hoàn thành). Đã duyệt = đã duyệt + hoàn thành. Thực hiện = ngày có báo cáo bán hàng, hoặc kế hoạch đã hoàn thành. Ô thực hiện: xanh = đạt số ngày pilot tối thiểu, vàng = đạt ≥ 50%, đỏ = dưới 50%.',
+    mAll.length ? `<div class="k-tbl-wrap"><table class="k-tbl k-mx"><thead><tr><th class="k-l" rowspan="2">Tháng</th>${head1}</tr><tr>${head2}</tr></thead><tbody>${monthRows}${totRow}</tbody></table></div>`
+      : '<div class="k-empty">Chưa có dữ liệu</div>', 'k-ncd');
 
   // ── 4. Theo tuần ──
   const byWeek = {};
