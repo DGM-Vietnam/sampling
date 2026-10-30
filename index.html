@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.9.0">
+<meta name="version" content="2.10.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -589,6 +589,43 @@ body {
 .mini-tbl th, .mini-tbl td { padding: 5px 6px; border-bottom: 1px solid var(--gray3); text-align: right; white-space: nowrap; }
 .mini-tbl th { color: var(--gray2); font-size: 10.5px; text-transform: uppercase; }
 .mini-tbl td:first-child, .mini-tbl th:first-child { text-align: left; }
+
+/* v2.10 — khu theo dõi campaign */
+.sale-card.locked { background: #f3f8f4; border-color: #b9dcc6; }
+.sale-lock { font-size: 12px; color: var(--green); font-weight: 700; }
+.sale-rev { grid-column: 1 / -1; font-size: 12px; color: var(--gray2); text-align: right; }
+.sale-rev b { color: var(--purple); }
+.sale-total .ln .ok { color: #9ff0c0; } .sale-total .ln .lo { color: #ffd166; }
+.c-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #fbf7ff; border: 1.5px solid var(--purple); border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: var(--gray); }
+.c-scope b { color: var(--purple); }
+.c-score { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+@media (min-width: 900px) { .c-score { grid-template-columns: repeat(4, 1fr); } }
+.c-kpi { background: var(--white); border: 1.5px solid var(--gray3); border-radius: var(--radius); padding: 14px 12px 12px; text-align: center; box-shadow: var(--shadow); position: relative; }
+.c-kpi .v { font-size: 30px; font-weight: 800; line-height: 1.1; color: var(--navy); }
+.c-kpi .l { font-size: 12px; font-weight: 700; color: var(--navy); margin-top: 4px; }
+.c-kpi .t { font-size: 11px; color: var(--gray2); margin-top: 2px; }
+.c-kpi .b { display: inline-block; margin-top: 7px; font-size: 10.5px; font-weight: 800; padding: 2px 9px; border-radius: 10px; background: var(--gray4); color: var(--gray2); }
+.c-kpi.good { border-color: #8fd3aa; } .c-kpi.good .v { color: var(--green); } .c-kpi.good .b { background: #e3f4ea; color: var(--green); }
+.c-kpi.over { border-color: #8fd3aa; } .c-kpi.over .v { color: var(--green); } .c-kpi.over .b { background: var(--green); color: #fff; }
+.c-kpi.low  { border-color: #f1a7b3; } .c-kpi.low .v  { color: var(--red); }   .c-kpi.low .b  { background: var(--red-light); color: var(--red); }
+.c-kpi.na .v { color: var(--gray3); }
+.c-mini { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
+@media (min-width: 900px) { .c-mini { grid-template-columns: repeat(5, 1fr); } }
+.c-mini div { background: var(--gray4); border-radius: 10px; padding: 9px 10px; }
+.c-mini span { display: block; font-size: 10.5px; color: var(--gray2); font-weight: 700; text-transform: uppercase; }
+.c-mini b { font-size: 17px; color: var(--navy); }
+.c-funnel { display: flex; flex-direction: column; gap: 7px; }
+.c-fr { display: grid; grid-template-columns: 150px 1fr 110px; gap: 10px; align-items: center; font-size: 12px; }
+@media (max-width: 600px) { .c-fr { grid-template-columns: 105px 1fr 82px; } }
+.c-fr .bar { height: 22px; background: var(--gray4); border-radius: 6px; overflow: hidden; }
+.c-fr .bar i { display: block; height: 100%; background: var(--purple); border-radius: 6px; }
+.c-fr .n { text-align: right; font-weight: 800; color: var(--navy); }
+.c-fr .n small { display: block; font-weight: 600; font-size: 10.5px; color: var(--gray2); }
+.c-prog { display: flex; flex-direction: column; gap: 3px; min-width: 90px; }
+.c-prog .bar { height: 7px; background: var(--gray4); border-radius: 4px; overflow: hidden; }
+.c-prog .bar i { display: block; height: 100%; border-radius: 4px; background: var(--red); }
+.c-prog.done .bar i { background: var(--green); } .c-prog.mid .bar i { background: var(--yellow2); }
+.c-note { font-size: 11px; color: var(--gray2); margin-top: 8px; line-height: 1.5; }
 
 /* =====================================================
    FORM STYLES
@@ -1531,7 +1568,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.9.0';
+const APP_VERSION = '2.10.0';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const TARGET_IMG_KB = 80;  // nén ~80KB/ảnh
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
@@ -1818,7 +1855,7 @@ document.getElementById('btn-logout').addEventListener('click', () => {
   if (confirm('Bạn có muốn đăng xuất?')) {
     currentUser = null;
     sessionStorage.removeItem('dgm_user');
-    sessionStorage.removeItem('dgm_masterdata_v29');
+    sessionStorage.removeItem('dgm_masterdata_v210');
     document.body.classList.remove('desktop-mode', 'mgr-mobile', 'kpi-role');
     showScreen('login');
   }
@@ -1830,7 +1867,7 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 const _userNameCache = {};
 
 async function loadMasterData(forceRefresh) {
-  const CACHE_KEY = 'dgm_masterdata_v29';
+  const CACHE_KEY = 'dgm_masterdata_v210';
   const CACHE_TTL = 30 * 60 * 1000;
 
   if (!forceRefresh) {
@@ -1889,6 +1926,12 @@ function getCampaignByName(name) {
   if (!name) return null;
   return (masterData.campaigns || []).find(c => c.name === name || (c.code && c.code === name)) || null;
 }
+/** v2.10: KPI mục tiêu của chương trình (mặc định theo đề xuất NCD 65ml nếu sheet chưa có). */
+const DEFAULT_CAMPAIGN_KPI = { reachMin: 80, reachMax: 120, openMin: 0.30, openMax: 0.40, convMin: 0.15, convMax: 0.20,
+  tasteMin: 150, tasteMax: 200, pilotDays: { 'Bắc': 6, 'Trung': 8, 'Nam': 8 } };
+function campaignKpi(c) { return Object.assign({}, DEFAULT_CAMPAIGN_KPI, (c && c.kpi) || {}); }
+/** So với khoảng mục tiêu → 'low' | 'good' | 'over' | 'na' */
+function kpiStatus(v, min, max) { if (v == null || isNaN(v)) return 'na'; if (v < min) return 'low'; if (max && v > max) return 'over'; return 'good'; }
 function campaignChip(p) {
   return p && p.campaign ? `<span class="cp-chip">🥥 ${escHtml(p.campaign)}</span>` : '';
 }
@@ -2343,20 +2386,22 @@ function goBackFromDetail() {
   else                       { showScreen('plans'); loadMyPlans(); }
 }
 
-/** v2.9: hiển thị 1 báo cáo (kèm bán hàng theo ca). */
+/** v2.10: hiển thị 1 báo cáo (kèm bán hàng theo ca: gõ cửa → mở cửa → mua). */
 function reportCardHtml(r, p) {
   const hasSales = Array.isArray(r.salesShifts) && r.salesShifts.length > 0;
   const c = getCampaignByName(p && p.campaign);
   const unit = (c && c.unitLabel) || 'bịch';
   let salesHtml = '';
   if (hasSales) {
-    const rows = r.salesShifts.map(s => `<tr><td>Ca ${s.no}${s.day ? ' · ' + fmtDate(s.day).substring(0,5) : ''}<br><span style="color:var(--gray2);font-size:10px;">${fmtTime(s.start)}–${fmtTime(s.end)} · ${s.pgCount || '?'} PG</span></td>
-      <td>${fmtNum(s.reached)}</td><td>${fmtNum(s.buyers)}</td><td>${fmtNum(s.packs)}</td><td>${fmtNum(s.revenue)}</td></tr>`).join('');
+    const kn = r.salesShifts.reduce((a, s) => a + (Number(s.knocked) || 0), 0);
+    const rows = r.salesShifts.map(s => `<tr><td>Ca ${s.no}${s.day ? ' · ' + fmtDate(s.day).substring(0,5) : ''}<br><span style="color:var(--gray2);font-size:10px;">${fmtTime(s.start)}–${fmtTime(s.end)} · ${s.pgCount || '?'} PG · ${s.carts != null ? s.carts : (s.pgCount || '?')} xe</span></td>
+      <td>${s.knocked ? fmtNum(s.knocked) : '—'}</td><td>${fmtNum(s.reached)}</td><td>${fmtNum(s.buyers)}</td><td>${fmtNum(s.packs)}</td><td>${fmtNum(s.revenue)}</td></tr>`).join('');
+    const open = kn ? Math.round(r.reached / kn * 100) + '%' : '—';
     const conv = r.reached ? Math.round(r.buyers / r.reached * 100) + '%' : '—';
     salesHtml = `<div style="margin-top:8px;font-size:12px;font-weight:700;color:var(--purple);">🛒 Bán hàng theo ca</div>
-      <div style="overflow-x:auto;"><table class="mini-tbl"><thead><tr><th>Ca</th><th>Tiếp cận</th><th>Mua</th><th>${unit}</th><th>Doanh số</th></tr></thead>
-      <tbody>${rows}<tr style="font-weight:800;"><td>Tổng</td><td>${fmtNum(r.reached)}</td><td>${fmtNum(r.buyers)}</td><td>${fmtNum(r.packsSold)}</td><td>${fmtNum(r.campaignSales)}</td></tr></tbody></table></div>
-      <div style="font-size:11px;color:var(--gray2);margin-top:4px;">Tỉ lệ chuyển đổi (mua/tiếp cận): <b>${conv}</b></div>`;
+      <div style="overflow-x:auto;"><table class="mini-tbl"><thead><tr><th>Ca</th><th>Gõ cửa</th><th>Mở cửa</th><th>Mua</th><th>${unit}</th><th>Doanh số</th></tr></thead>
+      <tbody>${rows}<tr style="font-weight:800;"><td>Tổng</td><td>${kn ? fmtNum(kn) : '—'}</td><td>${fmtNum(r.reached)}</td><td>${fmtNum(r.buyers)}</td><td>${fmtNum(r.packsSold)}</td><td>${fmtNum(r.campaignSales)}</td></tr></tbody></table></div>
+      <div style="font-size:11px;color:var(--gray2);margin-top:4px;">Tỷ lệ mở cửa nghe: <b>${open}</b> · Tỷ lệ chuyển đổi mua: <b>${conv}</b></div>`;
   }
   return `<div class="card"><div class="card-body">
     ${dr('Người BC', userName(r.reporter))} ${dr('Thời gian', fmtDateTime(r.reportedAt))}
@@ -3725,48 +3770,36 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
       ✅ Báo cáo bổ sung — Tất cả hình ảnh là <b>không bắt buộc</b> lần này
     </div>`;
 
-  // ── Khối bán hàng theo ca ──
+  // ── Khối bán hàng theo ca (v2.10) ──
   let salesHtml = '';
   if (hasSales) {
     const ps = plan.pgSales;
     const days = (plan.days && plan.days.length) ? plan.days : [{ date: plan.date }];
     const today = localToday();
     const defDay = (days.find(d => toInputDate(d.date) === today) || days[0]).date;
-    reportFormData.salesShifts = (ps.shifts || []).map((s, i) => ({
-      no: s.no || i + 1, start: fmtTime(s.start), end: fmtTime(s.end), pgCount: ps.count,
-      reached: '', buyers: '', packs: '', revenue: '', _revManual: false,
-    }));
+    reportFormData._planShifts = (ps.shifts || []).map((s, i) => ({ no: s.no || i + 1, start: fmtTime(s.start), end: fmtTime(s.end) }));
+    reportFormData._pgCount = ps.count;
     reportFormData._salesDay = toInputDate(defDay);
+    // các ca đã có người báo cáo: 'yyyy-MM-dd|no' → {name, s}
+    reportFormData._reported = {};
+    (plan.reports || []).forEach(r => (r.salesShifts || []).forEach(s => {
+      reportFormData._reported[(s.day ? toInputDate(s.day) : toInputDate(plan.date)) + '|' + s.no] = { name: userName(r.reporter), s };
+    }));
     const unit = reportFormData._unitLabel;
     salesHtml = `
     <div class="form-section">
       <div class="form-section-header purple">🛒 Bán hàng ${escHtml(plan.campaign || '')} — báo cáo theo ca</div>
       <div class="form-section-body">
-        <div class="cp-info">📌 Quy ước đếm: <b>1 người tiếp cận = 1 tờ rơi phát ra</b> · <b>1 người mua = 1 góc tờ rơi xé</b>.<br>
-          Doanh số tự gợi ý = số ${unit} × ${fmtNum(reportFormData._unitPrice)}đ — sửa lại nếu bán theo combo.</div>
+        <div class="cp-info">📌 Quy ước đếm: <b>Gõ cửa</b> = số hộ đã đến gõ cửa · <b>Mở cửa nghe</b> = hộ mở cửa nghe giới thiệu (= 1 tờ rơi phát) · <b>Người mua</b> = 1 góc tờ rơi xé.<br>
+          Giá cố định <b>${fmtNum(reportFormData._unitPrice)}đ/${unit}</b> — doanh số tự tính. Có thể báo cáo từng ca riêng; ca nào chưa làm thì để trống.</div>
         ${days.length > 1 ? `
         <div class="form-field">
           <label class="required">Ngày báo cáo</label>
-          <select class="form-input" id="rs-day" onchange="reportFormData._salesDay=this.value">
+          <select class="form-input" id="rs-day" onchange="reportFormData._salesDay=this.value;renderSaleCards()">
             ${days.map(d => `<option value="${toInputDate(d.date)}" ${toInputDate(d.date) === reportFormData._salesDay ? 'selected' : ''}>${getDayName(d.date)}, ${fmtDate(d.date)}</option>`).join('')}
           </select>
         </div>` : ''}
-        ${reportFormData.salesShifts.map((s, i) => `
-        <div class="sale-card">
-          <div class="sale-card-h"><span>Ca ${s.no}</span><span style="font-weight:600;color:var(--gray2);">${s.start}–${s.end} · ${ps.count} PG duyệt</span></div>
-          <div class="sale-grid">
-            <div class="form-field"><label>Số PG thực tế</label>
-              <input class="form-input" type="number" min="0" inputmode="numeric" value="${s.pgCount}" oninput="onSaleInput(${i},'pgCount',this.value)"></div>
-            <div class="form-field"><label class="${isFirstReport ? 'required' : ''}">Người tiếp cận (tờ rơi)</label>
-              <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" oninput="onSaleInput(${i},'reached',this.value)"></div>
-            <div class="form-field"><label>Người mua (góc xé)</label>
-              <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" oninput="onSaleInput(${i},'buyers',this.value)"></div>
-            <div class="form-field"><label>Số ${unit} đã bán</label>
-              <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" oninput="onSaleInput(${i},'packs',this.value)"></div>
-            <div class="form-field" style="grid-column:1/-1;"><label>Doanh số ca (đ)</label>
-              <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" id="rs-rev-${i}" oninput="onSaleInput(${i},'revenue',this.value)"></div>
-          </div>
-        </div>`).join('')}
+        <div id="rs-cards" style="display:flex;flex-direction:column;gap:10px;"></div>
         <div class="sale-total" id="rs-total"></div>
       </div>
     </div>`;
@@ -3839,38 +3872,88 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
   `;
 
   reportFormData._isFirstReport = isFirstReport;
-  if (hasSales) updateSaleTotals();
+  if (hasSales) renderSaleCards();
   loadApprovedSamplesForReport(planId);
+}
+
+/** v2.10: vẽ thẻ nhập cho từng ca của ngày đang chọn; ca đã có người báo cáo thì khóa lại. */
+function renderSaleCards() {
+  const R = reportFormData, el = document.getElementById('rs-cards');
+  if (!el) return;
+  const unit = R._unitLabel;
+  R.salesShifts = R._planShifts.map(s => {
+    const done = R._reported[R._salesDay + '|' + s.no];
+    return Object.assign({}, s, { pgCount: R._pgCount, carts: R._pgCount, knocked: '', reached: '', buyers: '', packs: '', locked: done || null });
+  });
+  el.innerHTML = R.salesShifts.map((s, i) => {
+    const head = `<div class="sale-card-h"><span>Ca ${s.no}</span><span style="font-weight:600;color:var(--gray2);">${s.start}–${s.end} · ${R._pgCount} PG duyệt</span></div>`;
+    if (s.locked) {
+      const x = s.locked.s;
+      return `<div class="sale-card locked">${head}
+        <div class="sale-lock">✅ Đã được ${escHtml(s.locked.name)} báo cáo</div>
+        <div style="font-size:12px;color:var(--gray);margin-top:4px;">Gõ cửa ${fmtNum(x.knocked || 0)} · Mở cửa ${fmtNum(x.reached)} · Mua ${fmtNum(x.buyers)} · ${fmtNum(x.packs)} ${unit}</div>
+      </div>`;
+    }
+    const f = (field, label, req, val) => `<div class="form-field"><label class="${req ? 'required' : ''}">${label}</label>
+      <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" value="${val}" oninput="onSaleInput(${i},'${field}',this.value)"></div>`;
+    return `<div class="sale-card">${head}
+      <div class="sale-grid">
+        ${f('pgCount', 'Số PG thực tế', false, s.pgCount)}
+        ${f('carts', 'Số xe đẩy', false, s.carts)}
+        ${f('knocked', 'Hộ đã gõ cửa', true, '')}
+        ${f('reached', 'Hộ mở cửa nghe (tờ rơi)', true, '')}
+        ${f('buyers', 'Người mua (góc xé)', false, '')}
+        ${f('packs', 'Số ' + unit + ' đã bán', false, '')}
+        <div class="sale-rev" id="rs-rev-${i}">Doanh số: <b>0 đ</b></div>
+      </div>
+    </div>`;
+  }).join('');
+  updateSaleTotals();
 }
 
 function onSaleInput(i, field, val) {
   const s = reportFormData.salesShifts[i];
-  if (!s) return;
-  s[field] = val === '' ? '' : Math.max(Number(val) || 0, 0);
-  if (field === 'revenue') s._revManual = val !== '';
-  if (field === 'packs' && !s._revManual) {
-    s.revenue = s.packs === '' ? '' : s.packs * reportFormData._unitPrice;
+  if (!s || s.locked) return;
+  s[field] = val === '' ? '' : Math.max(Math.floor(Number(val) || 0), 0);
+  if (field === 'packs') {
     const el = document.getElementById('rs-rev-' + i);
-    if (el) el.value = s.revenue;
+    if (el) el.innerHTML = 'Doanh số: <b>' + fmtCurrency((Number(s.packs) || 0) * reportFormData._unitPrice) + '</b>';
   }
   updateSaleTotals();
+}
+
+/** Ca đã nhập số liệu (chưa khóa). */
+function filledSaleShifts() {
+  return (reportFormData.salesShifts || []).filter(s => !s.locked &&
+    ((Number(s.knocked) || 0) > 0 || (Number(s.reached) || 0) > 0 || (Number(s.packs) || 0) > 0 || (Number(s.buyers) || 0) > 0));
 }
 
 function updateSaleTotals() {
   const el = document.getElementById('rs-total');
   if (!el) return;
-  const t = reportFormData.salesShifts.reduce((a, s) => {
-    a.reached += Number(s.reached) || 0; a.buyers += Number(s.buyers) || 0;
-    a.packs += Number(s.packs) || 0; a.revenue += Number(s.revenue) || 0; return a;
-  }, { reached: 0, buyers: 0, packs: 0, revenue: 0 });
-  const conv = t.reached ? Math.round(t.buyers / t.reached * 100) + '%' : '—';
-  const warn = reportFormData.salesShifts.some(s => (Number(s.buyers) || 0) > (Number(s.reached) || 0))
-    ? '<div style="margin-top:6px;color:#ffe140;font-weight:700;">⚠️ Số người mua đang lớn hơn số người tiếp cận</div>' : '';
+  const R = reportFormData, K = campaignKpi(getCampaignByName(R._plan && R._plan.campaign));
+  const list = filledSaleShifts();
+  const t = list.reduce((a, s) => {
+    a.kn += Number(s.knocked) || 0; a.rc += Number(s.reached) || 0; a.by += Number(s.buyers) || 0;
+    a.pk += Number(s.packs) || 0; a.xe += (s.carts === '' ? 0 : Number(s.carts) || 0); return a;
+  }, { kn: 0, rc: 0, by: 0, pk: 0, xe: 0 });
+  if (!list.length) { el.innerHTML = '<div class="ln"><span>Chưa nhập số liệu ca nào</span></div>'; return; }
+  const per = t.xe ? t.kn / t.xe : null, open = t.kn ? t.rc / t.kn : null, conv = t.rc ? t.by / t.rc : null;
+  const tag = (v, mn, mx) => { const st = kpiStatus(v, mn, mx); return st === 'low' ? ' <span class="lo">▼ dưới KPI</span>' : (st === 'na' ? '' : ' <span class="ok">✓ đạt</span>'); };
+  const errs = [];
+  list.forEach(s => {
+    const kn = Number(s.knocked) || 0, rc = Number(s.reached) || 0, by = Number(s.buyers) || 0, pk = Number(s.packs) || 0;
+    if (!kn) errs.push(`Ca ${s.no}: chưa nhập số hộ gõ cửa`);
+    if (rc > kn) errs.push(`Ca ${s.no}: mở cửa nghe lớn hơn gõ cửa`);
+    if (by > rc) errs.push(`Ca ${s.no}: người mua lớn hơn mở cửa nghe`);
+    if (pk < by) errs.push(`Ca ${s.no}: số ${R._unitLabel} ít hơn số người mua`);
+  });
   el.innerHTML = `
-    <div class="ln"><span>Tổng tiếp cận</span><b>${fmtNum(t.reached)}</b></div>
-    <div class="ln"><span>Tổng người mua · chuyển đổi</span><b>${fmtNum(t.buyers)} · ${conv}</b></div>
-    <div class="ln"><span>Tổng ${reportFormData._unitLabel} bán</span><b>${fmtNum(t.packs)}</b></div>
-    <div class="ln"><span>Doanh số bán hàng</span><b>${fmtCurrency(t.revenue)}</b></div>${warn}`;
+    <div class="ln"><span>Hộ gõ cửa / xe / ca (KPI ${K.reachMin}–${K.reachMax})</span><b>${per == null ? '—' : Math.round(per)}${tag(per, K.reachMin, K.reachMax)}</b></div>
+    <div class="ln"><span>Tỷ lệ mở cửa nghe (KPI ${Math.round(K.openMin*100)}–${Math.round(K.openMax*100)}%)</span><b>${open == null ? '—' : Math.round(open * 100) + '%'}${tag(open, K.openMin, K.openMax)}</b></div>
+    <div class="ln"><span>Tỷ lệ chuyển đổi mua (KPI ${Math.round(K.convMin*100)}–${Math.round(K.convMax*100)}%)</span><b>${conv == null ? '—' : Math.round(conv * 100) + '%'}${tag(conv, K.convMin, K.convMax)}</b></div>
+    <div class="ln"><span>Tổng ${R._unitLabel} bán · doanh số</span><b>${fmtNum(t.pk)} · ${fmtCurrency(t.pk * R._unitPrice)}</b></div>
+    ${errs.length ? `<div style="margin-top:6px;color:#ffe140;font-weight:700;">⚠️ ${errs.join('<br>⚠️ ')}</div>` : ''}`;
 }
 
 function imageUploadBlock(key, title, required, maxAdd) {
@@ -4015,32 +4098,35 @@ async function submitReport() {
   const isFirst = R._isFirstReport !== false;
   const hasSales = !!R._hasSales;
   const actualTasters = parseInt(document.getElementById('r-tasters')?.value) || 0;
-  const shifts = (R.salesShifts || []).map(s => ({
+  const shifts = hasSales ? filledSaleShifts().map(s => ({
     no: s.no, day: R._salesDay || '', start: s.start, end: s.end,
-    pgCount: Number(s.pgCount) || 0, reached: Number(s.reached) || 0, buyers: Number(s.buyers) || 0,
-    packs: Number(s.packs) || 0, revenue: Number(s.revenue) || 0,
-  }));
+    pgCount: Number(s.pgCount) || 0, carts: s.carts === '' ? '' : Number(s.carts) || 0,
+    knocked: Number(s.knocked) || 0, reached: Number(s.reached) || 0, buyers: Number(s.buyers) || 0,
+    packs: Number(s.packs) || 0,
+  })) : [];
 
   if (isFirst) {
     if (R.imgLocation.length === 0) { showToast('Bắt buộc có hình tên địa điểm', 'error'); return; }
     if (R.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
     if (hasSales) {
       if (R.imgCart.length === 0) { showToast('Bắt buộc có hình xe đẩy / PG bán hàng', 'error'); return; }
-      const miss = shifts.find(s => !(s.reached > 0));
-      if (miss) { showToast(`Ca ${miss.no}: vui lòng nhập số người tiếp cận`, 'error'); return; }
+      if (!shifts.length && !actualTasters) { showToast('Vui lòng nhập số liệu ít nhất 1 ca bán hàng', 'error'); return; }
     } else {
       if (R.imgFood.length === 0) { showToast('Bắt buộc có hình món ăn', 'error'); return; }
       if (!actualTasters) { showToast('Vui lòng nhập số người thử', 'error'); return; }
     }
   } else {
     const anyImg = ['imgLocation','imgFood','imgOverview','imgOther','imgCart'].some(k => R[k].length > 0);
-    const anySales = shifts.some(s => s.reached > 0 || s.packs > 0);
-    if (!anyImg && !actualTasters && !anySales) {
+    if (!anyImg && !actualTasters && !shifts.length) {
       showToast('Vui lòng nhập ít nhất số người thử, số liệu bán hàng hoặc 1 hình ảnh', 'error'); return;
     }
   }
-  const bad = shifts.find(s => s.buyers > s.reached);
-  if (bad) { showToast(`Ca ${bad.no}: số người mua không được lớn hơn số người tiếp cận`, 'error'); return; }
+  for (const s of shifts) {
+    if (!(s.knocked > 0))      { showToast(`Ca ${s.no}: vui lòng nhập số hộ đã gõ cửa`, 'error'); return; }
+    if (s.reached > s.knocked) { showToast(`Ca ${s.no}: hộ mở cửa nghe không được lớn hơn hộ gõ cửa`, 'error'); return; }
+    if (s.buyers > s.reached)  { showToast(`Ca ${s.no}: người mua không được lớn hơn hộ mở cửa nghe`, 'error'); return; }
+    if (s.packs < s.buyers)    { showToast(`Ca ${s.no}: số ${R._unitLabel} không được ít hơn số người mua`, 'error'); return; }
+  }
 
   btn.disabled = true;
   btn.textContent = '⏳ Đang gửi...';
@@ -4776,7 +4862,7 @@ async function doInlineApprove(planId) {
 // =====================================================
 let mgrTab = 'kpi';
 let kpiData = null;
-let kpiState = { period: '', ch: 'all', vg: 'all', cp: 'all', mx: 'ht', tb: 'sal', staffAll: false };
+let kpiState = { period: '', ch: 'all', vg: 'all', cp: 'all', mx: 'ht', tb: 'sal', staffAll: false, cl: 'pk' };
 const KPI_ACTIVE  = ['da_duyet', 'hoan_thanh'];
 const KPI_VOID    = ['tu_choi', 'da_huy'];
 const KPI_CH      = ['MT', 'GT'];
@@ -4803,6 +4889,10 @@ function daysBetween(a, b) { const x = parseLocalDate(a), y = parseLocalDate(b);
 
 function kpiPeriod(v) {
   const [t, a] = String(v).split(':'); const cur = ymNow();
+  if (t === 'c') {  // v2.10: toàn chương trình 'c:yyyy-mm|yyyy-mm'
+    const [from, to0] = a.split('|'); const to = to0 > cur ? cur : to0;
+    return { from, to, label: 'Toàn chương trình (' + ymShort(from) + ' → ' + ymShort(to0) + ')', prev: { from: '0000-00', to: '0000-00' }, noPrev: true, prevLabel: '' };
+  }
   if (t === 'm') return { from: a, to: a, label: 'Tháng ' + ymLabel(a), prev: { from: ymAdd(a, -1), to: ymAdd(a, -1) }, prevLabel: 'so với tháng trước' };
   if (t === 'q') {
     const [y, q] = a.split('-').map(Number); const from = y + '-' + String((q - 1) * 3 + 1).padStart(2, '0');
@@ -4819,7 +4909,10 @@ function kpiPeriod(v) {
 function kpiPeriodOptions(sel) {
   const cur = ymNow(), y = +cur.substring(0, 4); let q = Math.floor((+cur.substring(5, 7) - 1) / 3) + 1, yy = y;
   const opt = (v, l) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${l}</option>`;
-  let o = '<optgroup label="Tháng">';
+  let o = '';
+  const cpv = kpiCampaignPeriod(kpiState.cp);
+  if (cpv) o += '<optgroup label="Chương trình">' + opt(cpv, 'Toàn chương trình') + '</optgroup>';
+  o += '<optgroup label="Tháng">';
   for (let i = 0; i < 12; i++) { const ym = ymAdd(cur, -i); o += opt('m:' + ym, 'Tháng ' + ymLabel(ym) + (i === 0 ? ' (hiện tại)' : '')); }
   o += '</optgroup><optgroup label="Quý">';
   for (let i = 0; i < 5; i++) { o += opt('q:' + yy + '-' + q, 'Quý ' + q + '/' + yy); q--; if (q < 1) { q = 4; yy--; } }
@@ -4858,8 +4951,23 @@ async function loadKpiDashboard(force) {
   renderKpi();
 }
 
+/** v2.10: kỳ 'toàn chương trình' cho chương trình đang lọc (nếu có ngày bắt đầu/kết thúc hoặc có dữ liệu). */
+function kpiCampaignPeriod(cpName) {
+  if (!cpName || cpName === 'all' || cpName === '__none') return '';
+  const c = getCampaignByName(cpName);
+  const ms = (kpiData && kpiData.plans || []).filter(p => p.cp === cpName).map(p => p.m).sort();
+  const from = (c && c.from) ? c.from.substring(0, 7) : ms[0];
+  const to   = (c && c.to)   ? c.to.substring(0, 7)   : ms[ms.length - 1];
+  return from && to ? 'c:' + from + '|' + to : '';
+}
+
 function kpiSet(k, v) {
   kpiState[k] = v;
+  if (k === 'cp') {
+    const cpv = kpiCampaignPeriod(v), c = getCampaignByName(v);
+    if (cpv && (!c || c.requiresPgSales !== false)) kpiState.period = cpv;
+    else if (String(kpiState.period).startsWith('c:')) kpiState.period = 'm:' + ymNow();
+  }
   const sc = document.getElementById('dash-content'), top = sc ? sc.scrollTop : 0;
   renderKpi();
   if (sc) sc.scrollTop = top;
@@ -4872,13 +4980,15 @@ function kpiInScope(p) {
 function kpiFilter(from, to) { return (kpiData.plans || []).filter(p => p.m >= from && p.m <= to && kpiInScope(p)); }
 
 function kpiAgg(list) {
-  const a = { plans: 0, kh: 0, ht: 0, htPlans: 0, huy: 0, tas: 0, sal: 0, cs: 0, rc: 0, by: 0, pk: 0,
-              pg: 0, ps: 0, lc: 0, sc: 0, gf: 0, tc: 0, actDays: 0, tcDone: 0, psDone: 0, pgd: 0, psd: 0, pgh: 0, sq: 0 };
+  const a = { plans: 0, kh: 0, ht: 0, htPlans: 0, huy: 0, tas: 0, sal: 0, cs: 0, rc: 0, by: 0, pk: 0, kn: 0, xc: 0,
+              pg: 0, ps: 0, lc: 0, sc: 0, gf: 0, tc: 0, actDays: 0, tcDone: 0, psDone: 0, tcRep: 0, psRep: 0, pgd: 0, psd: 0, pgh: 0, sq: 0 };
   list.forEach(p => {
     if (KPI_VOID.includes(p.st)) { if (p.st === 'da_huy') a.huy++; return; }
     a.plans++; a.kh += p.nd; a.tas += p.tas; a.sal += p.sal;
-    a.cs += p.cs || 0; a.rc += p.rc || 0; a.by += p.by || 0; a.pk += p.pk || 0;
+    a.cs += p.cs || 0; a.rc += p.rc || 0; a.by += p.by || 0; a.pk += p.pk || 0; a.kn += p.kn || 0; a.xc += p.xc || 0;
     if (p.st === 'hoan_thanh') { a.ht += p.nd; a.htPlans++; a.tcDone += p.tc; a.psDone += p.ps || 0; }
+    // v2.10: chi phí của kế hoạch ĐÃ CÓ BÁO CÁO — cùng nguồn với số người / doanh số / số bịch
+    if (KPI_ACTIVE.includes(p.st) && p.rp > 0) { a.tcRep += p.tc; a.psRep += p.ps || 0; }
     if (KPI_ACTIVE.includes(p.st)) {
       a.pg += p.pg; a.ps += p.ps || 0; a.lc += p.lc; a.sc += p.sc; a.gf += p.gf; a.tc += p.tc;
       a.actDays += p.nd; a.pgd += p.pgd; a.psd += p.psd || 0; a.pgh += p.pgh; a.sq += p.sq;
@@ -4887,11 +4997,11 @@ function kpiAgg(list) {
   const contacts = a.tas + a.rc;
   a.rate = a.kh ? a.ht / a.kh : null;
   a.avg  = a.ht ? contacts / a.ht : null;
-  a.cpp  = contacts ? a.tcDone / contacts : null;
-  a.roi  = a.tcDone ? a.sal / a.tcDone : null;
+  a.cpp  = contacts ? a.tcRep / contacts : null;
+  a.roi  = a.tcRep ? a.sal / a.tcRep : null;
   a.cpb  = a.actDays ? a.tc / a.actDays : null;
   a.conv = a.rc ? a.by / a.rc : null;
-  a.cpPack = a.pk ? a.psDone / a.pk : null;
+  a.cpPack = a.pk ? a.psRep / a.pk : null;
   a.contacts = contacts;
   return a;
 }
@@ -4920,7 +5030,7 @@ function renderKpi() {
   const el = document.getElementById('dash-content'); if (!el || !kpiData) return;
   const P = kpiPeriod(kpiState.period);
   const cur = kpiFilter(P.from, P.to);
-  const prevOk = P.prev.from >= (kpiData.from || '0000-00');
+  const prevOk = !P.noPrev && P.prev.from >= (kpiData.from || '0000-00');
   const prev = prevOk ? kpiFilter(P.prev.from, P.prev.to) : null;
   const A = kpiAgg(cur), B = prev ? kpiAgg(prev) : null;
 
@@ -4943,9 +5053,17 @@ function renderKpi() {
   </div>
   <div class="k-period">${P.label}${prev ? ` <span>· ${P.prevLabel}</span>` : ''}</div>`;
 
+  const camp = (kpiState.cp !== 'all' && kpiState.cp !== '__none') ? getCampaignByName(kpiState.cp) : null;
+  const salesCamp = (camp && camp.requiresPgSales) || (kpiState.cp !== 'all' && kpiState.cp !== '__none' && cur.some(p => p.md));
+  if (salesCamp) {
+    h += kpiCampaignSection(P, cur, camp || { name: kpiState.cp });
+    h += '<div class="k-period" style="margin-top:6px;">Tổng quan chung <span>· tất cả hoạt động của chương trình (booth + xe đẩy)</span></div>';
+  } else if (kpiState.cp === 'all') {
+    const sc = (masterData.campaigns || []).filter(c => c.requiresPgSales && cpPresent.includes(c.name));
+    sc.forEach(c => { h += `<div class="c-scope">🥥 <span>Đang có dữ liệu <b>${escHtml(c.name)}</b>.</span>
+      <button class="btn btn-sm" style="background:var(--purple);color:#fff;margin-left:auto;" onclick="kpiSet('cp','${escHtml(c.name).replace(/'/g, "\\'")}')">📈 Mở khu theo dõi campaign</button></div>`; });
+  }
   h += kpiCardsHtml(A, B);
-  if (A.ps > 0 || A.rc > 0 || A.pk > 0)
-    h += kpiBox('🛒 Bán hàng PG xe đẩy (NCD 65ml)', 'Tiếp cận = tờ rơi phát · Người mua = góc tờ rơi xé. CP/bịch = chi phí PG bán hàng của buổi đã hoàn thành ÷ số bịch bán.', kpiSalesTable(cur), 'k-ncd');
   h += kpiBox('📍 So sánh theo kênh · vùng', 'Kế hoạch & hoàn thành tính theo <b>buổi</b> (1 ngày = 1 buổi). Người = người thử booth + người tiếp cận xe đẩy.', kpiSegmentTable(cur));
   h += kpiBox('📅 Buổi sampling theo tháng', 'Ma trận tháng × kênh · vùng — ô càng đậm, giá trị càng cao.', kpiMatrix(P));
   h += kpiBox('💰 Chi phí chi tiết', 'Chi phí cam kết = kế hoạch đã duyệt + hoàn thành. Mẫu thử = SL thực dùng (hoặc SL duyệt) × giá MT/GT.', kpiCostTable(cur));
@@ -4957,9 +5075,176 @@ function renderKpi() {
     ${kpiBox('📦 SKU sampling', 'SL mẫu dùng trong kỳ (đã duyệt + hoàn thành).', kpiSkuTable(cur))}
     ${kpiBox('👥 Nhân sự thực hiện', 'Mỗi buổi tính cho từng người thực hiện.', kpiStaffTable(cur))}
   </div>
-  <div class="k-foot">tr = triệu đồng · k = nghìn đồng · CP/người = chi phí buổi HT ÷ (người thử + tiếp cận) · DS/CP = doanh số (booth + bán hàng) ÷ chi phí buổi HT · Vùng lấy theo người tạo kế hoạch.</div>
+  <div class="k-foot">tr = triệu đồng · k = nghìn đồng · CP/người = chi phí các kế hoạch đã có báo cáo ÷ (người thử booth + hộ mở cửa nghe) · DS/CP = doanh số (booth + bán hàng) ÷ chi phí các kế hoạch đã có báo cáo · Vùng lấy theo người tạo kế hoạch.</div>
   </div>`;
   el.innerHTML = h;
+}
+
+// =====================================================
+// v2.10 — KHU THEO DÕI CAMPAIGN (chương trình có PG bán hàng)
+// Dữ liệu: kpiData.shifts = từng ca bán hàng đã báo cáo (ngày, xe, gõ cửa, mở cửa, mua, bịch, doanh số, chi phí ca)
+// =====================================================
+function cShiftAgg(list) {
+  const a = { n: 0, xe: 0, kn: 0, rc: 0, by: 0, pk: 0, rv: 0, co: 0, knB: 0, xeB: 0, rcB: 0, days: {} };
+  list.forEach(s => {
+    a.n++; a.xe += s.xe; a.kn += s.kn; a.rc += s.rc; a.by += s.by; a.pk += s.pk; a.rv += s.rv; a.co += s.co;
+    if (s.kn > 0) { a.knB += s.kn; a.xeB += s.xe; a.rcB += s.rc; }
+    a.days[s.id + '|' + s.d] = 1;
+  });
+  a.nDays = Object.keys(a.days).length;
+  a.reach = a.xeB ? a.knB / a.xeB : null;          // hộ gõ cửa / xe / ca
+  a.open  = a.knB ? a.rcB / a.knB : null;          // mở cửa nghe / gõ cửa
+  a.conv  = a.rc  ? a.by / a.rc   : null;          // người mua / mở cửa nghe
+  a.pkXe  = a.xe  ? a.pk / a.xe   : null;          // bịch / xe-ca
+  a.cpPk  = a.pk  ? a.co / a.pk   : null;          // chi phí PG thực tế / bịch
+  a.roi   = a.co  ? a.rv / a.co   : null;          // doanh số / chi phí PG
+  return a;
+}
+function cPill(v, st, txt) {
+  const cls = st === 'low' ? 'k-bad' : (st === 'good' || st === 'over') ? 'k-good' : '';
+  return `<span class="k-pill ${cls}">${txt != null ? txt : v}</span>`;
+}
+function cWeekStart(d) {
+  const x = parseLocalDate(d); if (!x) return d;
+  const dow = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dow);
+  return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+}
+function cShiftType(s) {
+  if (s.md !== '2ca') return '1 ca liên tục (≥ 6h)';
+  return (hhmmToMin(s.s) != null && hhmmToMin(s.s) < 12 * 60) ? 'Ca sáng (2 ca ngắn)' : 'Ca chiều (2 ca ngắn)';
+}
+/** Các cột chỉ số dùng chung cho bảng tuần / ca / vùng / xếp hạng. */
+function cMetricHead(extra) {
+  return `${extra || ''}<th>Ca · xe-ca</th><th>Gõ cửa/xe/ca</th><th>% mở cửa</th><th>% mua</th><th>Bịch</th><th>Bịch/xe-ca</th><th>Doanh số</th><th>CP PG/bịch</th>`;
+}
+function cMetricCells(a, K) {
+  return `<td>${fN(a.n)}<small>${fN(a.xe)} xe-ca</small></td>
+    <td>${cPill(a.reach, kpiStatus(a.reach, K.reachMin, K.reachMax), a.reach == null ? '—' : Math.round(a.reach))}</td>
+    <td>${cPill(a.open, kpiStatus(a.open, K.openMin, K.openMax), fP(a.open))}</td>
+    <td>${cPill(a.conv, kpiStatus(a.conv, K.convMin, K.convMax), fP(a.conv))}</td>
+    <td><b>${fN(a.pk)}</b></td><td>${a.pkXe == null ? '—' : a.pkXe.toFixed(1).replace('.', ',')}</td>
+    <td>${fM(a.rv)}</td><td>${a.cpPk == null ? '—' : fN(a.cpPk) + 'đ'}</td>`;
+}
+function cGroupTable(groups, K, firstHead, sortFn) {
+  const rows = Object.entries(groups).map(([k, list]) => ({ k, a: cShiftAgg(list) }));
+  if (sortFn) rows.sort(sortFn);
+  if (!rows.length) return '<div class="k-empty">Chưa có dữ liệu</div>';
+  return `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr><th class="k-l">${firstHead}</th>${cMetricHead()}</tr></thead><tbody>
+    ${rows.map(r => `<tr><td class="k-l">${r.k}</td>${cMetricCells(r.a, K)}</tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+function kpiCampaignSection(P, plansCur, camp) {
+  const K = campaignKpi(camp);
+  const planMap = {};
+  (kpiData.plans || []).forEach(p => { planMap[p.id] = p; });
+  if (!Array.isArray(kpiData.shifts))
+    return kpiBox('🥥 ' + escHtml(camp.name), '', '<div class="k-empty">Máy chủ chưa trả dữ liệu theo ca — hãy cập nhật Code.gs v2.10 và Deploy bản mới.</div>', 'k-ncd');
+  const list = kpiData.shifts.filter(s => s.m >= P.from && s.m <= P.to && planMap[s.id] && kpiInScope(planMap[s.id]));
+  const A = cShiftAgg(list);
+  const live = plansCur.filter(p => !KPI_VOID.includes(p.st));
+  const booth = live.filter(p => p.tas > 0);
+  const tasDays = booth.reduce((t, p) => t + p.nd, 0), tasSum = booth.reduce((t, p) => t + p.tas, 0);
+  const taste = tasDays ? tasSum / tasDays : null;
+
+  // ── 1. Scorecard 4 KPI ──
+  const badge = { low: 'Dưới KPI', good: 'Đạt KPI', over: 'Vượt KPI', na: 'Chưa có số liệu' };
+  const card = (v, txt, l, en, mn, mx, fmt) => { const st = kpiStatus(v, mn, mx);
+    return `<div class="c-kpi ${st}"><div class="v">${v == null ? '—' : txt}</div><div class="l">${l}</div><div class="t">${en}</div>
+      <div class="t">KPI: ${fmt(mn)}–${fmt(mx)}</div><span class="b">${badge[st]}</span></div>`; };
+  const pc = x => Math.round(x * 100) + '%', nn = x => fN(x);
+  let h = `<div class="c-scope">🥥 <span>Theo dõi <b>${escHtml(camp.name)}</b> · ${P.label}${kpiState.vg !== 'all' ? ' · Miền ' + kpiState.vg : ''}</span>
+    <span style="margin-left:auto;">${fN(A.n)} ca đã báo cáo · ${fN(A.nDays)} ngày bán</span></div>`;
+  h += kpiBox('🎯 KPI campaign', 'Gõ cửa/xe/ca = hộ đã gõ cửa ÷ số xe-ca · Mở cửa = hộ mở cửa nghe ÷ hộ gõ cửa · Chuyển đổi = người mua ÷ hộ mở cửa nghe · Thử booth = lượt thử ÷ số buổi có booth.',
+    `<div class="c-score">
+      ${card(A.reach, A.reach == null ? '' : fN(A.reach), 'hộ tiếp cận / xe / ca', 'households / cart / shift', K.reachMin, K.reachMax, nn)}
+      ${card(A.open, A.open == null ? '' : pc(A.open), 'tỷ lệ mở cửa nghe', 'door-open rate', K.openMin, K.openMax, pc)}
+      ${card(A.conv, A.conv == null ? '' : pc(A.conv), 'tỷ lệ chuyển đổi mua', 'purchase conversion', K.convMin, K.convMax, pc)}
+      ${card(taste, taste == null ? '' : fN(taste), 'lượt thử tại booth / ca', 'booth tastings / shift', K.tasteMin, K.tasteMax, nn)}
+    </div>
+    <div class="c-mini">
+      <div><span>Bịch đã bán</span><b>${fN(A.pk)}</b></div>
+      <div><span>Doanh số</span><b>${fM(A.rv)}</b></div>
+      <div><span>Bịch / xe-ca</span><b>${A.pkXe == null ? '—' : A.pkXe.toFixed(1).replace('.', ',')}</b></div>
+      <div><span>CP PG thực tế / bịch</span><b>${A.cpPk == null ? '—' : fN(A.cpPk) + 'đ'}</b></div>
+      <div><span>Doanh số / CP PG</span><b>${fX(A.roi)}</b></div>
+    </div>`, 'k-ncd');
+
+  // ── 2. Phễu ──
+  const mx = Math.max(A.kn, A.rc, 1);
+  const fr = (l, v, sub) => `<div class="c-fr"><div>${l}</div><div class="bar"><i style="width:${Math.max(Math.round(v / mx * 100), v ? 2 : 0)}%"></i></div><div class="n">${fN(v)}${sub ? `<small>${sub}</small>` : ''}</div></div>`;
+  const funnel = A.n ? `<div class="c-funnel">
+      ${fr('🚪 Hộ đã gõ cửa', A.kn, A.xe ? fN(A.kn / A.xe) + ' / xe-ca' : '')}
+      ${fr('👂 Hộ mở cửa nghe', A.rc, A.open == null ? '' : fP(A.open) + ' mở cửa')}
+      ${fr('🛍️ Người mua', A.by, A.conv == null ? '' : fP(A.conv) + ' chuyển đổi')}
+      ${fr('📦 Bịch đã bán', A.pk, A.by ? (A.pk / A.by).toFixed(1).replace('.', ',') + ' bịch/người' : '')}
+    </div>` : '<div class="k-empty">Chưa có ca nào được báo cáo trong kỳ</div>';
+
+  // ── 3. Tiến độ pilot theo vùng ──
+  const today = ymNow();
+  const months = ymList(P.from, P.to).filter(m => m <= today);
+  const regions = ['Bắc', 'Trung', 'Nam'].filter(v => kpiState.vg === 'all' || kpiState.vg === v);
+  const runDays = {};   // 'm|vg' → {planId|day}
+  list.forEach(s => { const p = planMap[s.id]; const k = s.m + '|' + p.vg; (runDays[k] = runDays[k] || {})[s.id + '|' + s.d] = 1; });
+  // kế hoạch đã hoàn thành nhưng chưa có số liệu theo ca → vẫn tính số ngày
+  live.filter(p => p.st === 'hoan_thanh' && !list.some(s => s.id === p.id)).forEach(p => {
+    for (let i = 0; i < p.nd; i++) { const d = addDays(p.d, i); const k = d.substring(0, 7) + '|' + p.vg; (runDays[k] = runDays[k] || {})[p.id + '|' + d] = 1; }
+  });
+  const planned = {};
+  live.forEach(p => { for (let i = 0; i < p.nd; i++) { const d = addDays(p.d, i); const k = d.substring(0, 7) + '|' + p.vg; planned[k] = (planned[k] || 0) + 1; } });
+  const prog = months.length ? `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr><th class="k-l">Tháng</th>${regions.map(v => `<th>Miền ${v}<br><small>tối thiểu ${K.pilotDays[v] || 0} ngày</small></th>`).join('')}</tr></thead><tbody>
+    ${months.slice().reverse().map(m => `<tr><td class="k-l">${ymShort(m)}${m === today ? ' <small>(đang chạy)</small>' : ''}</td>${regions.map(v => {
+      const run = Object.keys(runDays[m + '|' + v] || {}).length, min = K.pilotDays[v] || 0, pl = planned[m + '|' + v] || 0;
+      const r = min ? run / min : 0, cls = r >= 1 ? 'done' : r >= 0.5 ? 'mid' : '';
+      return `<td><div class="c-prog ${cls}"><div><b>${run}</b>/${min} ngày</div><div class="bar"><i style="width:${Math.min(Math.round(r * 100), 100)}%"></i></div><small>đã lên KH ${pl} ngày</small></div></td>`;
+    }).join('')}</tr>`).join('')}
+    </tbody></table></div>` : '<div class="k-empty">Kỳ đã chọn chưa bắt đầu</div>';
+
+  h += `<div class="k-grid2">
+    ${kpiBox('🔻 Phễu bán hàng xe đẩy', 'Tổng các ca đã báo cáo trong kỳ.', funnel, 'k-ncd')}
+    ${kpiBox('📆 Tiến độ pilot theo vùng', 'Ngày đã chạy (có báo cáo bán hàng hoặc đã hoàn thành) so với số ngày pilot tối thiểu mỗi tháng.', prog, 'k-ncd')}
+  </div>`;
+
+  // ── 4. Theo tuần ──
+  const byWeek = {};
+  list.forEach(s => { (byWeek[cWeekStart(s.d)] = byWeek[cWeekStart(s.d)] || []).push(s); });
+  const wk = {};
+  Object.keys(byWeek).sort().reverse().forEach(w => { wk[`${fmtDate(w).substring(0, 5)} → ${fmtDate(addDays(w, 6)).substring(0, 5)}`] = byWeek[w]; });
+  h += kpiBox('📈 Diễn biến theo tuần', 'Tuần tính từ thứ 2. Ô xanh = đạt KPI, ô đỏ = dưới KPI.', cGroupTable(wk, K, 'Tuần'), 'k-ncd');
+
+  // ── 5. So sánh ca & vùng ──
+  const byType = {}, byReg = {};
+  list.forEach(s => {
+    (byType[cShiftType(s)] = byType[cShiftType(s)] || []).push(s);
+    const p = planMap[s.id], rk = `<b>${p.ch}</b> · ${p.vg}`; (byReg[rk] = byReg[rk] || []).push(s);
+  });
+  h += `<div class="k-grid2">
+    ${kpiBox('⏰ So sánh hình thức ca', 'Ca sáng / chiều (2 ca ngắn) và 1 ca liên tục — dùng để chọn cách xếp ca cho 2027.', cGroupTable(byType, K, 'Hình thức'), 'k-ncd')}
+    ${kpiBox('📍 Theo kênh · vùng', 'Chi phí PG thực tế = số PG thực tế × đơn giá ca.', cGroupTable(byReg, K, 'Kênh · Vùng'), 'k-ncd')}
+  </div>`;
+
+  // ── 6. Xếp hạng điểm bán & nhân sự ──
+  const sorts = { pk: ['Bịch', (a, b) => b.a.pk - a.a.pk], conv: ['% mua', (a, b) => (b.a.conv || 0) - (a.a.conv || 0)],
+                  reach: ['Gõ cửa/xe/ca', (a, b) => (b.a.reach || 0) - (a.a.reach || 0)], cp: ['CP/bịch thấp', (a, b) => (a.a.cpPk == null ? 1e12 : a.a.cpPk) - (b.a.cpPk == null ? 1e12 : b.a.cpPk)] };
+  const S = sorts[kpiState.cl] || sorts.pk;
+  const tabs = Object.entries(sorts).map(([k, v]) => `<button class="${kpiState.cl === k ? 'on' : ''}" onclick="kpiSet('cl','${k}')">${v[0]}</button>`).join('');
+  const byLoc = {}, byRep = {}, names = kpiData.users || {};
+  list.forEach(s => {
+    const p = planMap[s.id];
+    const lk = `<div class="k-loc">${escHtml(p.loc)}</div><small>${p.ch} · ${p.vg}</small>`; (byLoc[lk] = byLoc[lk] || []).push(s);
+    const rk = `<div class="k-loc">${escHtml(names[s.rp] || userName(s.rp))}</div>`; (byRep[rk] = byRep[rk] || []).push(s);
+  });
+  const top = g => { const o = {}; Object.entries(g).map(([k, l]) => ({ k, l, a: cShiftAgg(l) })).sort(S[1]).slice(0, 10).forEach(x => { o[x.k] = x.l; }); return o; };
+  h += `<section class="k-box k-ncd"><div class="k-box-h"><h3>🏆 Xếp hạng điểm bán & nhân sự</h3><p>Top 10 theo tiêu chí đang chọn. Nhân sự = người báo cáo ca.</p></div>
+    <div class="k-seg k-seg-sm" style="margin-bottom:10px;">${tabs}</div>
+    <div class="k-grid2">
+      <div><div class="k-rank-h good">Điểm bán</div>${cGroupTable(top(byLoc), K, 'Điểm bán', S[1])}</div>
+      <div><div class="k-rank-h good">Nhân sự</div>${cGroupTable(top(byRep), K, 'Nhân sự', S[1])}</div>
+    </div></section>`;
+
+  h += `<div class="k-foot">KPI mục tiêu lấy từ sheet CHUONG_TRINH (cột K–U). Giá bán cố định ${fN((camp && camp.unitPrice) || 10000)}đ/${escHtml((camp && camp.unitLabel) || 'bịch')}.
+    Chỉ số gõ cửa & mở cửa chỉ tính các ca có nhập số hộ gõ cửa (báo cáo từ v2.10). Lượt thử booth/ca tính theo số buổi có booth.</div>`;
+  return h;
 }
 
 function kpiBox(title, sub, body, cls) {
@@ -4979,10 +5264,10 @@ function kpiCardsHtml(A, B) {
   const pgShare = A.tc ? Math.round((A.pg + A.ps) / A.tc * 100) : 0, scShare = A.tc ? Math.round(A.sc / A.tc * 100) : 0;
   return `<div class="k-cards">
     ${card('c-red',   'Buổi hoàn thành', fN(A.ht), `/ ${fN(A.kh)} KH · <b class="${rateCls(A.rate)}">${fP(A.rate)}</b> `, kpiDelta(A.ht, B && B.ht))}
-    ${card('c-green', 'Người thử + tiếp cận', fN(A.contacts), `${fN(A.tas)} thử · ${fN(A.rc)} tiếp cận `, kpiDelta(A.contacts, B && B.contacts))}
+    ${card('c-green', 'Người thử + nghe GT', fN(A.contacts), `${fN(A.tas)} thử booth · ${fN(A.rc)} hộ mở cửa `, kpiDelta(A.contacts, B && B.contacts))}
     ${card('c-teal',  'Doanh số', fM(A.sal), `${A.pk ? fN(A.pk) + ' bịch · ' : ''}${fN(A.htPlans)} KH HT `, kpiDelta(A.sal, B && B.sal))}
     ${card('c-navy',  'Chi phí cam kết', fM(A.tc), `PG ${pgShare}% · Mẫu ${scShare}% `, kpiDelta(A.tc, B && B.tc, true))}
-    ${card('c-yellow','CP / người', A.cpp == null ? '—' : fN(A.cpp) + 'đ', 'buổi đã HT ', kpiDelta(A.cpp, B && B.cpp, true))}
+    ${card('c-yellow','CP / người', A.cpp == null ? '—' : fN(A.cpp) + 'đ', 'KH đã có báo cáo ', kpiDelta(A.cpp, B && B.cpp, true))}
     ${card('c-purple','DS / Chi phí', fX(A.roi), `${A.huy} kế hoạch hủy `, kpiDelta(A.roi, B && B.roi))}
   </div>`;
 }
