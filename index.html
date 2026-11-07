@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.11.0">
+<meta name="version" content="2.11.1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1179,6 +1179,8 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 
 #mgr-bottom-nav { display: none; }
 body.mgr-mobile #mgr-bottom-nav { display: grid !important; }
+/* v2.11.1: màn hình nhập liệu (lên kế hoạch / báo cáo) có nút Gửi cố định ở đáy → ẩn thanh menu dưới để không che nút */
+body.mgr-mobile.form-screen #mgr-bottom-nav { display: none !important; }
 body.mgr-mobile .screen-content:not(.no-bottom-nav) { padding-bottom: 70px; }
 body.mgr-mobile #screen-home .screen-content { padding-bottom: 70px; }
 .mgr-nav-btn {
@@ -1568,7 +1570,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.11.0';
+const APP_VERSION = '2.11.1';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const TARGET_IMG_KB = 80;  // nén ~80KB/ảnh
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
@@ -3839,7 +3841,7 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
     <div class="spacer" style="height:8px;"></div>
     ${firstNote}
     <div class="timemark-notice" style="margin:0 16px 12px;">
-      Lưu ý đội sales: Tất cả hình ảnh phải được chụp qua app <b>Timemark</b> theo quy định của team sales.
+      <span>Lưu ý đội sales: Tất cả hình ảnh phải được chụp qua app <b>Timemark</b> theo quy định của team sales.</span>
     </div>
 
     ${salesHtml}
@@ -6106,6 +6108,7 @@ function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById('screen-' + name);
   if (el) el.classList.add('active');
+  document.body.classList.toggle('form-screen', name === 'report' || name === 'create-plan');
   if (currentUser) sessionStorage.setItem('dgm_screen', name);
   updateSidebarActive();
   const sidebar = document.getElementById('desktop-sidebar');
