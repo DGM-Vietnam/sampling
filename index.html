@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.10.0">
+<meta name="version" content="2.11.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1568,7 +1568,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.10.0';
+const APP_VERSION = '2.11.0';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const TARGET_IMG_KB = 80;  // nén ~80KB/ảnh
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
@@ -1855,7 +1855,7 @@ document.getElementById('btn-logout').addEventListener('click', () => {
   if (confirm('Bạn có muốn đăng xuất?')) {
     currentUser = null;
     sessionStorage.removeItem('dgm_user');
-    sessionStorage.removeItem('dgm_masterdata_v210');
+    sessionStorage.removeItem('dgm_masterdata_v211');
     document.body.classList.remove('desktop-mode', 'mgr-mobile', 'kpi-role');
     showScreen('login');
   }
@@ -1867,7 +1867,7 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 const _userNameCache = {};
 
 async function loadMasterData(forceRefresh) {
-  const CACHE_KEY = 'dgm_masterdata_v210';
+  const CACHE_KEY = 'dgm_masterdata_v211';
   const CACHE_TTL = 30 * 60 * 1000;
 
   if (!forceRefresh) {
@@ -1879,6 +1879,7 @@ async function loadMasterData(forceRefresh) {
           masterData = data;
           Object.assign(_userNameCache, data.userNames || {});
           (data.users || []).forEach(u => { _userNameCache[u.code] = u.name; });
+          checkAppVersion();
           return;
         }
       }
@@ -1895,6 +1896,7 @@ async function loadMasterData(forceRefresh) {
       masterData.users     = b.users     || [];
       masterData.campaigns = b.campaigns || [];
       masterData.userNames = b.userNames || {};
+      masterData.minAppVersion = b.minAppVersion || '';
       Object.assign(_userNameCache, masterData.userNames);
       masterData.users.forEach(usr => { _userNameCache[usr.code] = usr.name; });
     }
@@ -1902,6 +1904,34 @@ async function loadMasterData(forceRefresh) {
   } finally {
     loading(false);
   }
+  checkAppVersion();
+}
+
+// =====================================================
+// v2.11 — KIỂM TRA PHIÊN BẢN: app cũ (còn trong bộ nhớ đệm trình duyệt/Zalo) → bắt tải lại
+// =====================================================
+function verCmp(a, b) {
+  const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0 ? 1 : -1; }
+  return 0;
+}
+function hardReload() {
+  try { Object.keys(sessionStorage).filter(k => k.startsWith('dgm_masterdata')).forEach(k => sessionStorage.removeItem(k)); } catch (e) {}
+  try { if ('caches' in window) caches.keys().then(ks => ks.forEach(k => caches.delete(k))); } catch (e) {}
+  location.replace(location.pathname + '?v=' + Date.now() + location.hash);
+}
+function checkAppVersion() {
+  const min = masterData.minAppVersion;
+  if (!min || verCmp(APP_VERSION, min) >= 0 || document.getElementById('upd-overlay')) return;
+  const d = document.createElement('div');
+  d.id = 'upd-overlay';
+  d.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(27,58,87,.92);display:flex;align-items:center;justify-content:center;padding:24px;';
+  d.innerHTML = `<div style="background:#fff;border-radius:16px;padding:22px;max-width:380px;text-align:center;font-family:var(--font);">
+    <div style="font-size:40px;">🔄</div>
+    <div style="font-size:17px;font-weight:800;color:var(--navy);margin:6px 0;">Có phiên bản mới của app</div>
+    <div style="font-size:13px;color:var(--gray);line-height:1.5;">Bạn đang dùng bản ${APP_VERSION}, cần bản ${min} để báo cáo đúng. Bấm nút dưới để tải lại.</div>
+    <button class="btn btn-primary" style="margin-top:14px;" onclick="hardReload()">Tải lại bản mới</button></div>`;
+  document.body.appendChild(d);
 }
 
 function userName(code) {
@@ -3791,7 +3821,7 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
       <div class="form-section-header purple">🛒 Bán hàng ${escHtml(plan.campaign || '')} — báo cáo theo ca</div>
       <div class="form-section-body">
         <div class="cp-info">📌 Quy ước đếm: <b>Gõ cửa</b> = số hộ đã đến gõ cửa · <b>Mở cửa nghe</b> = hộ mở cửa nghe giới thiệu (= 1 tờ rơi phát) · <b>Người mua</b> = 1 góc tờ rơi xé.<br>
-          Giá cố định <b>${fmtNum(reportFormData._unitPrice)}đ/${unit}</b> — doanh số tự tính. Có thể báo cáo từng ca riêng; ca nào chưa làm thì để trống.</div>
+          Giá cố định <b>${fmtNum(reportFormData._unitPrice)}đ/${unit}</b> — doanh số tự tính. Chọn <b>ca sáng / ca chiều</b> bên dưới — mỗi lần gửi là báo cáo cho 1 ca.</div>
         ${days.length > 1 ? `
         <div class="form-field">
           <label class="required">Ngày báo cáo</label>
@@ -3876,45 +3906,86 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
   loadApprovedSamplesForReport(planId);
 }
 
-/** v2.10: vẽ thẻ nhập cho từng ca của ngày đang chọn; ca đã có người báo cáo thì khóa lại. */
+/** v2.11: tên ca hiển thị — 1 ca: "Ca liên tục"; 2 ca: "Ca sáng" / "Ca chiều" theo giờ bắt đầu. */
+function saleShiftName(s, all) {
+  if (all.length < 2) return 'Ca liên tục';
+  const m = hhmmToMin(s.start), am = all.filter(x => hhmmToMin(x.start) < 12 * 60).length;
+  if (am === 1 && m < 12 * 60) return 'Ca sáng';
+  if (am === 1 && m >= 12 * 60) return 'Ca chiều';
+  return 'Ca ' + s.no;
+}
+
+/**
+ * v2.11: chọn ca sáng / ca chiều → chỉ mở báo cáo của ca đó. Mỗi lần gửi = 1 ca.
+ * Ca đã có người báo cáo (cùng ngày) thì khóa lại, chỉ xem số liệu.
+ */
 function renderSaleCards() {
   const R = reportFormData, el = document.getElementById('rs-cards');
   if (!el) return;
-  const unit = R._unitLabel;
+  const unit = R._unitLabel, day = R._salesDay;
+  R._vals = R._vals || {};
   R.salesShifts = R._planShifts.map(s => {
-    const done = R._reported[R._salesDay + '|' + s.no];
-    return Object.assign({}, s, { pgCount: R._pgCount, carts: R._pgCount, knocked: '', reached: '', buyers: '', packs: '', locked: done || null });
+    const v = R._vals[day + '|' + s.no] || {};
+    return Object.assign({}, s, {
+      pgCount: v.pgCount != null ? v.pgCount : R._pgCount, carts: v.carts != null ? v.carts : R._pgCount,
+      knocked: v.knocked != null ? v.knocked : '', reached: v.reached != null ? v.reached : '',
+      buyers: v.buyers != null ? v.buyers : '', packs: v.packs != null ? v.packs : '',
+      locked: R._reported[day + '|' + s.no] || null });
   });
-  el.innerHTML = R.salesShifts.map((s, i) => {
-    const head = `<div class="sale-card-h"><span>Ca ${s.no}</span><span style="font-weight:600;color:var(--gray2);">${s.start}–${s.end} · ${R._pgCount} PG duyệt</span></div>`;
-    if (s.locked) {
-      const x = s.locked.s;
-      return `<div class="sale-card locked">${head}
-        <div class="sale-lock">✅ Đã được ${escHtml(s.locked.name)} báo cáo</div>
-        <div style="font-size:12px;color:var(--gray);margin-top:4px;">Gõ cửa ${fmtNum(x.knocked || 0)} · Mở cửa ${fmtNum(x.reached)} · Mua ${fmtNum(x.buyers)} · ${fmtNum(x.packs)} ${unit}</div>
-      </div>`;
+  // ca mặc định: giữ ca đang chọn nếu còn mở; nếu báo cáo hôm nay → ca đang/đã diễn ra gần nhất; còn lại → ca đầu tiên chưa báo cáo
+  const open = R.salesShifts.filter(s => !s.locked);
+  if (!R.salesShifts.some(s => s.no === R._selShift && !s.locked)) {
+    let pick = open[0];
+    if (day === localToday() && open.length > 1) {
+      const now = new Date().getHours() * 60 + new Date().getMinutes();
+      const started = open.filter(s => hhmmToMin(s.start) <= now + 30);
+      if (started.length) pick = started[started.length - 1];
     }
-    const f = (field, label, req, val) => `<div class="form-field"><label class="${req ? 'required' : ''}">${label}</label>
-      <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" value="${val}" oninput="onSaleInput(${i},'${field}',this.value)"></div>`;
-    return `<div class="sale-card">${head}
+    R._selShift = pick ? pick.no : (R.salesShifts[0] || {}).no;
+  }
+  const sel = R.salesShifts.find(s => s.no === R._selShift);
+  const tabs = R.salesShifts.map(s => `<button type="button" class="${s.no === R._selShift ? 'on' : ''}" onclick="selectSaleShift(${s.no})">
+      ${saleShiftName(s, R.salesShifts) === 'Ca chiều' ? '🌇' : saleShiftName(s, R.salesShifts) === 'Ca sáng' ? '☀️' : '🕒'} ${saleShiftName(s, R.salesShifts)}<br>
+      <small>${s.start}–${s.end}${s.locked ? ' · ✅ đã BC' : ''}</small></button>`).join('');
+  const head = s => `<div class="sale-card-h"><span>${saleShiftName(s, R.salesShifts)} (ca ${s.no})</span><span style="font-weight:600;color:var(--gray2);">${s.start}–${s.end} · ${R._pgCount} PG duyệt</span></div>`;
+  let card = '';
+  if (!sel) card = '';
+  else if (sel.locked) {
+    const x = sel.locked.s;
+    card = `<div class="sale-card locked">${head(sel)}
+      <div class="sale-lock">✅ Ca này đã được ${escHtml(sel.locked.name)} báo cáo</div>
+      <div style="font-size:12px;color:var(--gray);margin-top:4px;">Gõ cửa ${x.knocked == null ? '—' : fmtNum(x.knocked)} · Mở cửa ${fmtNum(x.reached)} · Mua ${fmtNum(x.buyers)} · ${fmtNum(x.packs)} ${unit}</div>
+      ${open.length ? '<div style="font-size:12px;color:var(--gray2);margin-top:6px;">Chọn ca khác ở trên để báo cáo.</div>' : '<div style="font-size:12px;color:var(--gray2);margin-top:6px;">Tất cả ca của ngày này đã được báo cáo. Bạn vẫn có thể gửi thêm ảnh / số liệu booth.</div>'}
+    </div>`;
+  } else {
+    const i = R.salesShifts.indexOf(sel);
+    const f = (field, label, req) => `<div class="form-field"><label class="${req ? 'required' : ''}">${label}</label>
+      <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" value="${sel[field]}" oninput="onSaleInput(${i},'${field}',this.value)"></div>`;
+    card = `<div class="sale-card">${head(sel)}
       <div class="sale-grid">
-        ${f('pgCount', 'Số PG thực tế', false, s.pgCount)}
-        ${f('carts', 'Số xe đẩy', false, s.carts)}
-        ${f('knocked', 'Hộ đã gõ cửa', true, '')}
-        ${f('reached', 'Hộ mở cửa nghe (tờ rơi)', true, '')}
-        ${f('buyers', 'Người mua (góc xé)', false, '')}
-        ${f('packs', 'Số ' + unit + ' đã bán', false, '')}
-        <div class="sale-rev" id="rs-rev-${i}">Doanh số: <b>0 đ</b></div>
+        ${f('pgCount', 'Số PG thực tế')}
+        ${f('carts', 'Số xe đẩy')}
+        ${f('knocked', 'Hộ đã gõ cửa', true)}
+        ${f('reached', 'Hộ mở cửa nghe (tờ rơi)', true)}
+        ${f('buyers', 'Người mua (góc xé)')}
+        ${f('packs', 'Số ' + unit + ' đã bán')}
+        <div class="sale-rev" id="rs-rev-${i}">Doanh số: <b>${fmtCurrency((Number(sel.packs) || 0) * R._unitPrice)}</b></div>
       </div>
     </div>`;
-  }).join('');
+  }
+  el.innerHTML = `<div class="form-field"><label class="required">Báo cáo cho ca</label>
+      <div class="k-seg pgs-mode" style="grid-template-columns:repeat(${R.salesShifts.length},1fr);">${tabs}</div></div>${card}`;
   updateSaleTotals();
 }
 
+function selectSaleShift(no) { reportFormData._selShift = no; renderSaleCards(); }
+
 function onSaleInput(i, field, val) {
-  const s = reportFormData.salesShifts[i];
+  const R = reportFormData, s = R.salesShifts[i];
   if (!s || s.locked) return;
   s[field] = val === '' ? '' : Math.max(Math.floor(Number(val) || 0), 0);
+  const k = R._salesDay + '|' + s.no;
+  (R._vals[k] = R._vals[k] || {})[field] = s[field];
   if (field === 'packs') {
     const el = document.getElementById('rs-rev-' + i);
     if (el) el.innerHTML = 'Doanh số: <b>' + fmtCurrency((Number(s.packs) || 0) * reportFormData._unitPrice) + '</b>';
@@ -3924,7 +3995,8 @@ function onSaleInput(i, field, val) {
 
 /** Ca đã nhập số liệu (chưa khóa). */
 function filledSaleShifts() {
-  return (reportFormData.salesShifts || []).filter(s => !s.locked &&
+  const R = reportFormData;   // v2.11: chỉ ca đang chọn
+  return (R.salesShifts || []).filter(s => !s.locked && s.no === R._selShift &&
     ((Number(s.knocked) || 0) > 0 || (Number(s.reached) || 0) > 0 || (Number(s.packs) || 0) > 0 || (Number(s.buyers) || 0) > 0));
 }
 
@@ -3943,10 +4015,10 @@ function updateSaleTotals() {
   const errs = [];
   list.forEach(s => {
     const kn = Number(s.knocked) || 0, rc = Number(s.reached) || 0, by = Number(s.buyers) || 0, pk = Number(s.packs) || 0;
-    if (!kn) errs.push(`Ca ${s.no}: chưa nhập số hộ gõ cửa`);
-    if (rc > kn) errs.push(`Ca ${s.no}: mở cửa nghe lớn hơn gõ cửa`);
-    if (by > rc) errs.push(`Ca ${s.no}: người mua lớn hơn mở cửa nghe`);
-    if (pk < by) errs.push(`Ca ${s.no}: số ${R._unitLabel} ít hơn số người mua`);
+    if (!kn) errs.push('Chưa nhập số hộ gõ cửa');
+    if (rc > kn) errs.push('Hộ mở cửa nghe đang lớn hơn số hộ gõ cửa — kiểm tra lại');
+    if (by > rc) errs.push('Người mua đang lớn hơn số hộ mở cửa nghe — kiểm tra lại');
+    if (pk < by) errs.push(`Số ${R._unitLabel} đang ít hơn số người mua — kiểm tra lại`);
   });
   el.innerHTML = `
     <div class="ln"><span>Hộ gõ cửa / xe / ca (KPI ${K.reachMin}–${K.reachMax})</span><b>${per == null ? '—' : Math.round(per)}${tag(per, K.reachMin, K.reachMax)}</b></div>
@@ -4122,10 +4194,12 @@ async function submitReport() {
     }
   }
   for (const s of shifts) {
-    if (!(s.knocked > 0))      { showToast(`Ca ${s.no}: vui lòng nhập số hộ đã gõ cửa`, 'error'); return; }
-    if (s.reached > s.knocked) { showToast(`Ca ${s.no}: hộ mở cửa nghe không được lớn hơn hộ gõ cửa`, 'error'); return; }
-    if (s.buyers > s.reached)  { showToast(`Ca ${s.no}: người mua không được lớn hơn hộ mở cửa nghe`, 'error'); return; }
-    if (s.packs < s.buyers)    { showToast(`Ca ${s.no}: số ${R._unitLabel} không được ít hơn số người mua`, 'error'); return; }
+    if (!(s.knocked > 0)) { showToast('Vui lòng nhập số hộ đã gõ cửa', 'error'); return; }
+    const warn = [];
+    if (s.reached > s.knocked) warn.push('• Hộ mở cửa nghe (' + s.reached + ') lớn hơn số hộ gõ cửa (' + s.knocked + ')');
+    if (s.buyers > s.reached)  warn.push('• Người mua (' + s.buyers + ') lớn hơn số hộ mở cửa nghe (' + s.reached + ')');
+    if (s.packs < s.buyers)    warn.push('• Số ' + R._unitLabel + ' (' + s.packs + ') ít hơn số người mua (' + s.buyers + ')');
+    if (warn.length && !confirm('Số liệu có vẻ chưa hợp lý:\n' + warn.join('\n') + '\n\nVẫn gửi báo cáo?')) return;
   }
 
   btn.disabled = true;
