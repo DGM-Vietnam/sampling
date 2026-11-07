@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.12.0">
+<meta name="version" content="2.12.1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1372,6 +1372,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
     <div class="sidebar-user" id="sidebar-user-info">
       <div class="sidebar-user-name" id="sidebar-name">—</div>
       <div class="sidebar-user-role" id="sidebar-role">—</div>
+      <div class="app-ver" style="font-size:10px;color:rgba(255,255,255,.4);margin-top:4px;"></div>
     </div>
     <nav class="sidebar-nav" id="sidebar-nav"></nav>
     <div class="sidebar-bottom">
@@ -1403,6 +1404,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
       </div>
       <button class="btn btn-primary" id="btn-login">Đăng nhập</button>
       <div class="login-error" id="login-error"></div>
+      <div class="app-ver" style="font-size:11px;color:var(--gray2);text-align:center;margin-top:14px;"></div>
     </div>
   </div>
 
@@ -1420,6 +1422,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
         <div class="home-greeting" id="home-greeting">Xin chào,</div>
         <div class="home-name" id="home-name">—</div>
         <div class="home-role" id="home-role">—</div>
+        <div class="app-ver" style="font-size:11px;opacity:.75;margin-top:6px;"></div>
       </div>
       <div class="home-stats-row" id="home-stats"></div>
       <div class="section-title">Chức năng</div>
@@ -1570,7 +1573,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.12.0';
+const APP_VERSION = '2.12.1';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const TARGET_IMG_KB = 70;  // v2.12: nén ~70KB/ảnh (cạnh dài 1024px) — đủ đọc chữ Timemark, tải nhanh hơn
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
@@ -6213,6 +6216,8 @@ function showScreen(name) {
 }
 
 (function init() {
+  // v2.12.1: hiện số phiên bản ở màn hình đăng nhập, trang chủ và thanh bên → nhìn là biết máy đang chạy bản nào
+  document.querySelectorAll('.app-ver').forEach(el => { el.textContent = 'Phiên bản ' + APP_VERSION; });
   const storedVersion = localStorage.getItem('dgm_app_version');
   if (storedVersion && storedVersion !== APP_VERSION) {
     localStorage.setItem('dgm_app_version', APP_VERSION);
