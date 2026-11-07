@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.12.1">
+<meta name="version" content="2.12.2">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -64,7 +64,8 @@ body {
 #app {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: 100vh;                     /* dự phòng trình duyệt cũ (Samsung Internet đời cũ) */
+  height: var(--app-h, 100dvh);      /* v2.12.2: JS đặt theo chiều cao màn hình thật */
   max-width: 480px;
   margin: 0 auto;
   background: var(--white);
@@ -986,6 +987,8 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   margin: 0 16px 12px;
 }
 
+/* v2.12.2: khi bàn phím đang mở → ẩn nút Gửi để không bị bấm nhầm khi nút nhảy lên sát ô đang nhập */
+body.kb-open .sticky-submit { display: none; }
 .sticky-submit {
   position: sticky; bottom: 0;
   background: var(--white);
@@ -1573,7 +1576,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.12.1';
+const APP_VERSION = '2.12.2';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const TARGET_IMG_KB = 70;  // v2.12: nén ~70KB/ảnh (cạnh dài 1024px) — đủ đọc chữ Timemark, tải nhanh hơn
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
@@ -4231,7 +4234,7 @@ function compressImage(file, targetKB) {
   });
 }
 
-async function submitReport() {
+async function doSubmitReport() {
   const btn = document.getElementById('btn-submit-report');
   const R = reportFormData;
   const isFirst = R._isFirstReport !== false;
@@ -6215,7 +6218,66 @@ function showScreen(name) {
   if (sidebar) sidebar.style.display = (name === 'login' || !currentUser) ? 'none' : (isDesktop() ? 'flex' : 'none');
 }
 
+// =====================================================
+// v2.12.2 — CHỐNG GỬI NHẦM BÁO CÁO
+//  1) Chiều cao app theo màn hình thật (sửa lỗi nút Gửi trôi lên giữa màn hình trên Samsung)
+//  2) Bàn phím đang mở → ẩn nút Gửi; vừa đóng bàn phím / vừa quay lại từ camera → bỏ qua cú chạm trong 0,8 giây
+//  3) Bấm Gửi → hiện bảng tóm tắt để kiểm tra, bấm "Gửi báo cáo" lần nữa mới gửi thật
+// =====================================================
+let _vvMax = 0, _lastLayoutJump = 0;
+function _isTyping() { const a = document.activeElement; return !!a && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !['file', 'checkbox', 'radio', 'button'].includes(a.type))); }
+function _onViewport() {
+  const vv = window.visualViewport, h = Math.round(vv ? vv.height : window.innerHeight);
+  if (!_isTyping() || h > _vvMax) _vvMax = Math.max(_vvMax, h);
+  const kb = _isTyping() && h < _vvMax * 0.8;
+  const was = document.body.classList.contains('kb-open');
+  document.body.classList.toggle('kb-open', kb);
+  if (was !== kb) _lastLayoutJump = Date.now();
+  if (!kb) document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
+}
+if (window.visualViewport) window.visualViewport.addEventListener('resize', _onViewport);
+window.addEventListener('resize', _onViewport);
+window.addEventListener('orientationchange', () => { _vvMax = 0; setTimeout(_onViewport, 300); });
+document.addEventListener('focusin', () => setTimeout(_onViewport, 350));
+document.addEventListener('focusout', () => setTimeout(_onViewport, 350));
+document.addEventListener('visibilitychange', () => { _lastLayoutJump = Date.now(); setTimeout(_onViewport, 300); });
+window.addEventListener('focus', () => { _lastLayoutJump = Date.now(); });
+document.addEventListener('change', e => { if (e.target && e.target.type === 'file') _lastLayoutJump = Date.now(); }, true);
+
+function submitReport() {
+  if (Date.now() - _lastLayoutJump < 800) return;   // cú chạm "lọt" do màn hình vừa co giãn → bỏ qua
+  const R = reportFormData, v = id => (document.getElementById(id) || {}).value || '';
+  const miss = '<span style="color:#c96a00;font-weight:700;">chưa nhập</span>';
+  const row = (k, val) => `<div class="detail-row"><span class="detail-key">${k}</span><span class="detail-value">${val}</span></div>`;
+  const img = k => (R[k] || []).length;
+  let body = '<div style="font-size:12px;color:var(--gray2);margin-bottom:8px;">Kiểm tra lại trước khi gửi. Muốn bổ sung thì bấm "Quay lại sửa".</div>';
+  if (R._hasSales) {
+    const s = (R.salesShifts || []).find(x => x.no === R._selShift) || {};
+    const name = s.start ? saleShiftName(s, R.salesShifts) + ' (' + s.start + '–' + s.end + ')' : '—';
+    body += row('Ca báo cáo', s.locked ? name + ' — <i>đã có người báo cáo</i>' : name);
+    if (!s.locked) {
+      body += row('Hộ gõ cửa · mở cửa', (s.knocked === '' ? miss : fmtNum(s.knocked)) + ' · ' + (s.reached === '' ? miss : fmtNum(s.reached)));
+      body += row('Người mua · số ' + R._unitLabel, (s.buyers === '' ? miss : fmtNum(s.buyers)) + ' · ' + (s.packs === '' ? miss : fmtNum(s.packs)));
+      body += row('Doanh số bán hàng', fmtCurrency((Number(s.packs) || 0) * R._unitPrice));
+    }
+  }
+  body += row(R._hasSales ? 'Người thử tại booth' : 'Số người thử', v('r-tasters') ? fmtNum(v('r-tasters')) : miss);
+  body += row(R._hasSales ? 'Doanh số tại booth' : 'Doanh số', v('r-sales') ? fmtCurrency(v('r-sales')) : miss);
+  body += row('Phản hồi khách hàng', v('r-feedback').trim() ? '✅ Có' : miss);
+  const imgs = [['imgLocation', 'Tên địa điểm'], ['imgFood', 'Món ăn'], ['imgOverview', 'Toàn cảnh']]
+    .concat(R._hasSales ? [['imgCart', 'Xe đẩy']] : []).concat([['imgOther', 'Khác']]);
+  body += row('Ảnh', imgs.map(([k, l]) => `${l}: <b>${img(k)}</b>`).join(' · '));
+  const used = (R.samplesUsed || []).reduce((a, x) => a + (Number(x.so_luong) || 0), 0);
+  body += row('Mẫu đã dùng', fmtNum(used));
+  body += row('Đánh dấu hoàn thành', R.markCompleted ? '✅ Có' : 'Không');
+  showModal('📋 Xác nhận gửi báo cáo', body, [
+    { label: '✏️ Quay lại sửa', cls: 'btn-secondary', action: 'closeModal()' },
+    { label: '📊 Gửi báo cáo', cls: 'btn-primary', action: 'closeModal();doSubmitReport()' },
+  ]);
+}
+
 (function init() {
+  _onViewport();
   // v2.12.1: hiện số phiên bản ở màn hình đăng nhập, trang chủ và thanh bên → nhìn là biết máy đang chạy bản nào
   document.querySelectorAll('.app-ver').forEach(el => { el.textContent = 'Phiên bản ' + APP_VERSION; });
   const storedVersion = localStorage.getItem('dgm_app_version');
