@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.11.1">
+<meta name="version" content="2.12.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1570,9 +1570,9 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.11.1';
+const APP_VERSION = '2.12.0';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
-const TARGET_IMG_KB = 80;  // nén ~80KB/ảnh
+const TARGET_IMG_KB = 70;  // v2.12: nén ~70KB/ảnh (cạnh dài 1024px) — đủ đọc chữ Timemark, tải nhanh hơn
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
 
 let currentUser = null;
@@ -1754,6 +1754,17 @@ const _API_TTL = {
 const _API_POST_THRESHOLD = 4096;
 function _cacheKey(params) { return JSON.stringify(params); }
 
+// v2.12: kết nối bền hơn cho mạng yếu / trình duyệt Zalo, Samsung
+//   • GET: thử lại tối đa 3 lần (chờ 1,2s rồi 3,5s), mỗi lần tối đa 30 giây
+//   • Nếu vẫn lỗi → đường dự phòng JSONP (thẻ <script>, không bị chặn CORS). Thành công thì các lần sau đi thẳng JSONP.
+//   • Thao tác ghi an toàn khi gửi lại (báo cáo, duyệt, hủy…) cũng được dùng đường dự phòng 1 lần.
+const NET_MSG = 'Không kết nối được máy chủ — mạng yếu hoặc máy chủ đang bận. Vui lòng thử lại.';
+const RETRY_SAFE_WRITES = new Set(['login', 'submitReport', 'approvePlan', 'rejectPlan', 'requestEdit', 'reopenPlan',
+  'cancelPlan', 'confirmCancel', 'rejectCancel', 'updatePlan', 'adjustPlan']);
+const _netMode = { jsonp: false };
+const _sleep = ms => new Promise(r => setTimeout(r, ms));
+function isNetErr(e) { return !!e && (e.net || e.name === 'TypeError' || e.name === 'AbortError'); }
+
 async function api(method, params) {
   if (method === 'GET') {
     const ttl = _API_TTL[params.action] || 0;
@@ -1770,45 +1781,96 @@ async function api(method, params) {
   return _apiFetch(method, params);
 }
 
+async function _fetchJson(url, opts, timeoutMs) {
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const t = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  try {
+    const res = await fetch(url, Object.assign({}, opts, ctrl ? { signal: ctrl.signal } : {}));
+    if (!res.ok) { const e = new Error('HTTP ' + res.status); if (res.status >= 500 || res.status === 429) e.net = true; throw e; }
+    const txt = await res.text();
+    try { return JSON.parse(txt); }
+    catch (x) { const e = new Error('Phản hồi máy chủ không hợp lệ'); e.net = true; throw e; }
+  } finally { if (t) clearTimeout(t); }
+}
+
+function _jsonp(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const cb = '__dgm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const s = document.createElement('script');
+    let done = false;
+    const finish = (data, err) => {
+      if (done) return; done = true; clearTimeout(timer);
+      try { delete window[cb]; } catch (x) { window[cb] = undefined; }
+      s.remove();
+      if (err) { err.net = true; reject(err); } else resolve(data);
+    };
+    const timer = setTimeout(() => finish(null, new Error('JSONP timeout')), timeoutMs);
+    window[cb] = d => finish(d);
+    s.onerror = () => finish(null, new Error('JSONP error'));
+    s.src = url + (url.indexOf('?') === -1 ? '?' : '&') + 'callback=' + cb;
+    document.head.appendChild(s);
+  });
+}
+
 async function _apiFetch(method, params) {
-  let fetchUrl, fetchOptions;
+  let fetchUrl, fetchOptions, getUrl = null;
   if (method === 'GET') {
-    const urlParams = new URLSearchParams(params);
-    fetchUrl    = `${SCRIPT_URL}?${urlParams.toString()}`;
+    fetchUrl = getUrl = `${SCRIPT_URL}?${new URLSearchParams(params).toString()}`;
     fetchOptions = { method: 'GET', redirect: 'follow', cache: 'no-cache' };
   } else {
     const payloadStr = JSON.stringify(params);
     if (payloadStr.length > _API_POST_THRESHOLD) {
-      fetchUrl    = SCRIPT_URL;
-      fetchOptions = {
-        method: 'POST', redirect: 'follow', cache: 'no-cache',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: payloadStr,
-      };
+      fetchUrl = SCRIPT_URL;
+      fetchOptions = { method: 'POST', redirect: 'follow', cache: 'no-cache',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: payloadStr };
     } else {
-      const urlParams = new URLSearchParams({ payload: payloadStr });
-      fetchUrl    = `${SCRIPT_URL}?${urlParams.toString()}`;
+      fetchUrl = getUrl = `${SCRIPT_URL}?${new URLSearchParams({ payload: payloadStr }).toString()}`;
       fetchOptions = { method: 'GET', redirect: 'follow', cache: 'no-cache' };
     }
   }
+  const isRead = method === 'GET';
+  const canJsonp = !!getUrl && (isRead || RETRY_SAFE_WRITES.has(params.action));
+  let data, lastErr;
 
-  try {
-    const res = await fetch(fetchUrl, fetchOptions);
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    const data = await res.json();
-    if (method === 'GET') {
-      const ck = _cacheKey(params);
-      if (data && data.success !== false && !data.error) _apiCache[ck] = { data, ts: Date.now() };
-    } else if (params.action !== 'login') {
-      // mọi thao tác ghi → xóa cache để danh sách luôn đúng trạng thái mới
-      Object.keys(_apiCache).forEach(k => delete _apiCache[k]);
-      kpiData = null;
+  if (!(canJsonp && _netMode.jsonp)) {
+    const attempts = isRead ? 3 : 1;
+    for (let i = 0; i < attempts && data === undefined; i++) {
+      try { data = await _fetchJson(fetchUrl, fetchOptions, isRead ? 30000 : 120000); }
+      catch (e) {
+        lastErr = e;
+        console.warn('[API] lần ' + (i + 1) + ' lỗi:', params.action, e.message);
+        if (!isNetErr(e)) throw e;
+        if (i < attempts - 1) await _sleep(i === 0 ? 1200 : 3500);
+      }
     }
-    return data;
-  } catch (err) {
-    console.error('[API] error:', err.message, 'URL:', fetchUrl.substring(0, 150));
+  }
+  if (data === undefined && canJsonp) {
+    try { data = await _jsonp(getUrl, 45000); _netMode.jsonp = true; console.warn('[API] dùng đường dự phòng JSONP'); }
+    catch (e) { lastErr = e; }
+  }
+  if (data === undefined) {
+    const err = new Error(NET_MSG); err.net = true; err.cause = lastErr;
+    console.error('[API] thất bại:', params.action, lastErr && lastErr.message);
     throw err;
   }
+
+  if (isRead) {
+    const ck = _cacheKey(params);
+    if (data && data.success !== false && !data.error) _apiCache[ck] = { data, ts: Date.now() };
+  } else if (params.action !== 'login' && params.action !== 'uploadReportImages') {
+    // mọi thao tác ghi → xóa cache để danh sách luôn đúng trạng thái mới
+    Object.keys(_apiCache).forEach(k => delete _apiCache[k]);
+    kpiData = null;
+  }
+  return data;
+}
+
+/** v2.12: khung báo lỗi kết nối kèm nút Thử lại */
+function netErrorHtml(retryJs) {
+  return `<div class="empty-state"><div class="empty-icon">📡</div>
+    <div class="empty-text">Không kết nối được máy chủ</div>
+    <div class="empty-sub">Mạng yếu hoặc máy chủ đang bận. Nếu đang mở link trong Zalo, hãy bấm ⋮ → "Mở bằng trình duyệt".</div>
+    <button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="${retryJs}">↻ Thử lại</button></div>`;
 }
 
 // =====================================================
@@ -2274,7 +2336,7 @@ async function loadMyPlans() {
     else listEl.innerHTML = plans.map(p => planCard(p)).join('');
   } catch(e) {
     console.error('loadMyPlans error:', e);
-    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi: ' + (e.message||e) + '</div></div>';
+    listEl.innerHTML = netErrorHtml('loadMyPlans()');
   }
 }
 
@@ -4143,7 +4205,7 @@ function compressImage(file, targetKB) {
       const img = new Image();
       img.onload = () => {
         let w = img.width, h = img.height;
-        const maxDim = 1280;
+        const maxDim = 1024;
         if (w > maxDim || h > maxDim) {
           const ratio = Math.min(maxDim/w, maxDim/h);
           w = Math.round(w * ratio); h = Math.round(h * ratio);
@@ -4213,26 +4275,61 @@ async function submitReport() {
   const urls = { imgLocation: [], imgFood: [], imgOverview: [], imgOther: [], imgCart: [] };
 
   if (totalImgCount > 0) {
-    loading(true, `📤 Đang tải ${totalImgCount} ảnh lên Drive...`);
-    try {
-      const images = {};
-      groups.forEach(k => { images[k] = R[k].map(i => ({ name: i.name, dataUrl: i.dataUrl })); });
-      const uploadRes = await api('POST', { action: 'uploadReportImages', planId: currentPlanId, userCode: currentUser.code, images });
-      if (uploadRes.success && uploadRes.folders) {
-        imgFolderUrl = uploadRes.folders.root || '';
-        groups.forEach(k => { urls[k] = uploadRes.folders[k] || []; });
-        const uploaded = uploadRes.uploaded || 0, total = uploadRes.total || totalImgCount;
-        if (uploaded < total) showToast(`⚠️ Chỉ tải được ${uploaded}/${total} ảnh lên Drive. Báo cáo vẫn được ghi nhận.`, 'error', 6000);
-      } else {
-        loading(false); btn.disabled = false; btn.textContent = '📊 Gửi báo cáo';
-        showToast(`❌ Upload ảnh thất bại: ${uploadRes.error || 'Lỗi không xác định'}\nVui lòng thử lại.`, 'error', 8000);
-        return;
+    // v2.12: tải ảnh theo đợt 4 ảnh/lần.
+    //  • Đợt đầu gửi riêng → server trả ID thư mục Drive. Các đợt sau gửi SONG SONG 3 đợt/lúc, ghi thẳng vào thư mục.
+    //  • Mỗi đợt thử lại tối đa 3 lần. Ảnh đã tải xong được nhớ lại → bấm Gửi lại không tải trùng.
+    R._tag = R._tag || Date.now().toString(36).slice(-6);
+    const queue = [];
+    groups.forEach(k => R[k].forEach((img, idx) => { if (!img._url) queue.push({ k, idx, img }); }));
+    const CH = 4, PAR = 3;
+    const chunks = [];
+    for (let i = 0; i < queue.length; i += CH) chunks.push(queue.slice(i, i + CH));
+    const doneCount = () => groups.reduce((a, k) => a + R[k].filter(x => x._url).length, 0);
+    const progress = (extra) => loading(true, `📤 Đang tải ảnh ${doneCount()} / ${totalImgCount}${extra || ''}`);
+    let lastErr = '';
+
+    const sendChunk = async chunk => {
+      const images = {}, offsets = {}, refs = {};
+      chunk.forEach(q => {
+        (images[q.k] = images[q.k] || []).push({ name: q.img.name, dataUrl: q.img.dataUrl });
+        (refs[q.k] = refs[q.k] || []).push(q.img);
+        if (offsets[q.k] == null) offsets[q.k] = q.idx;
+      });
+      for (let t = 0; t < 3; t++) {
+        try {
+          const r = await api('POST', { action: 'uploadReportImages', planId: currentPlanId, userCode: currentUser.code,
+            images, offsets, tag: R._tag, folderIds: R._folderIds || null });
+          if (r && r.success && r.folders) {
+            if (r.folders.root) R._folderUrl = r.folders.root;
+            if (r.folders.folderIds && r.folders.folderIds.root) R._folderIds = Object.assign({}, R._folderIds || {}, r.folders.folderIds);
+            Object.keys(refs).forEach(k => { const got = r.folders[k] || []; refs[k].forEach((img, j) => { if (got[j]) img._url = got[j]; }); });
+            progress();
+            return true;
+          }
+          lastErr = (r && r.error) || 'Lỗi không xác định';
+        } catch (e) { lastErr = e.message || NET_MSG; }
+        if (t < 2) { progress(` · mạng yếu, đang thử lại…`); await _sleep(2000 * (t + 1)); }
       }
-    } catch(e) {
+      return false;
+    };
+
+    progress();
+    let allOk = true;
+    if (chunks.length) {
+      // đợt đầu: lấy ID thư mục (nếu đã có từ lần gửi trước thì bỏ qua bước này)
+      if (!R._folderIds) allOk = await sendChunk(chunks.shift());
+      // các đợt còn lại: 3 đợt song song
+      let next = 0;
+      const worker = async () => { while (allOk && next < chunks.length) { const c = chunks[next++]; if (!(await sendChunk(c))) allOk = false; } };
+      if (allOk) await Promise.all(Array.from({ length: Math.min(PAR, chunks.length) }, worker));
+    }
+    if (!allOk || doneCount() < totalImgCount) {
       loading(false); btn.disabled = false; btn.textContent = '📊 Gửi báo cáo';
-      showToast('❌ Lỗi kết nối khi upload ảnh. Vui lòng kiểm tra mạng và thử lại.', 'error', 8000);
+      showToast(`❌ Mới tải được ${doneCount()}/${totalImgCount} ảnh${lastErr ? ' (' + lastErr + ')' : ''}.\nẢnh đã tải được giữ lại — bấm "Gửi báo cáo" lần nữa để tải tiếp.`, 'error', 9000);
       return;
     }
+    imgFolderUrl = R._folderUrl || '';
+    groups.forEach(k => { urls[k] = R[k].filter(x => x._url).map(x => x._url); });
   }
 
   loading(true, '📊 Đang lưu báo cáo...');
@@ -5766,7 +5863,7 @@ async function loadDashboard() {
     renderPersonalDash(el, res.data || [], month);
   } catch (e) {
     console.error('Dashboard load error:', e);
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Lỗi kết nối. Thử lại sau.</div></div>';
+    el.innerHTML = netErrorHtml('loadDashboard()');
   }
 }
 
