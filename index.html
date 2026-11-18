@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.12.2">
+<meta name="version" content="2.13.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -923,8 +923,9 @@ textarea.form-input { resize: none; min-height: 80px; }
   background: var(--white);
   border-radius: 20px 20px 0 0;
   width: 100%; max-height: 85vh;
+  max-height: calc(var(--app-h, 100vh) * 0.86);   /* v2.13: theo chiều cao màn hình thật — không bị thanh công cụ Samsung che */
   overflow-y: auto;
-  padding: 20px;
+  padding: 20px 20px calc(16px + var(--safe-bottom));
   transform: translateY(100%);
   transition: transform 0.3s ease;
 }
@@ -932,7 +933,7 @@ textarea.form-input { resize: none; min-height: 80px; }
 .overlay.show .modal { transform: translateY(0); }
 .modal-handle { width: 36px; height: 4px; background: var(--gray3); border-radius: 2px; margin: 0 auto 16px; }
 .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
-.modal-footer { display: flex; gap: 10px; margin-top: 20px; }
+.modal-footer { display: flex; gap: 10px; margin-top: 16px; position: sticky; bottom: calc(-16px - var(--safe-bottom)); background: var(--white); padding: 10px 0 6px; box-shadow: 0 -8px 12px -10px rgba(0,0,0,.25); }  /* v2.13: nút luôn nhìn thấy */
 .modal-footer .btn { flex: 1; }
 
 #loading-overlay {
@@ -987,8 +988,8 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   margin: 0 16px 12px;
 }
 
-/* v2.12.2: khi bàn phím đang mở → ẩn nút Gửi để không bị bấm nhầm khi nút nhảy lên sát ô đang nhập */
-body.kb-open .sticky-submit { display: none; }
+/* v2.13: KHÔNG ẩn nút Gửi khi bàn phím mở nữa (trên Samsung bàn phím không tự đóng khi cuộn → salesman không thấy nút).
+   Chống bấm nhầm đã có bảng xác nhận + bỏ qua cú chạm ngay sau khi màn hình co giãn. */
 .sticky-submit {
   position: sticky; bottom: 0;
   background: var(--white);
@@ -1576,7 +1577,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.12.2';
+const APP_VERSION = '2.13.0';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const TARGET_IMG_KB = 70;  // v2.12: nén ~70KB/ảnh (cạnh dài 1024px) — đủ đọc chữ Timemark, tải nhanh hơn
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
@@ -1722,7 +1723,24 @@ function loading(show, msg) {
   el.style.display = show ? 'flex' : 'none';
   if (msg) document.getElementById('loading-text').textContent = msg;
 }
+// v2.13: ghi lỗi phía điện thoại về sheet APP_LOGS (mức CLIENT) — để tra khi nhân viên báo "không gửi được"
+const _clientLogSeen = {};
+function logClient(kind, message) {
+  try {
+    if (!currentUser) return;
+    const key = kind + '|' + message;
+    if (_clientLogSeen[key] && Date.now() - _clientLogSeen[key] < 60000) return;
+    _clientLogSeen[key] = Date.now();
+    const scr = (document.querySelector('.screen.active') || {}).id || '';
+    api('POST', { action: 'logClient', kind: kind, message: String(message).slice(0, 400), userCode: currentUser.code,
+      appVersion: APP_VERSION, screen: scr, ua: navigator.userAgent }).catch(() => {});
+  } catch (e) {}
+}
+window.addEventListener('error', e => logClient('js-error', (e.message || '') + ' @' + (e.lineno || '')));
+window.addEventListener('unhandledrejection', e => logClient('promise', (e.reason && (e.reason.message || e.reason)) || ''));
+
 function showToast(msg, type='', duration=3000) {
+  if (type === 'error') logClient('toast', msg);
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'toast show' + (type ? ' ' + type : '');
@@ -1765,7 +1783,7 @@ function _cacheKey(params) { return JSON.stringify(params); }
 //   • Nếu vẫn lỗi → đường dự phòng JSONP (thẻ <script>, không bị chặn CORS). Thành công thì các lần sau đi thẳng JSONP.
 //   • Thao tác ghi an toàn khi gửi lại (báo cáo, duyệt, hủy…) cũng được dùng đường dự phòng 1 lần.
 const NET_MSG = 'Không kết nối được máy chủ — mạng yếu hoặc máy chủ đang bận. Vui lòng thử lại.';
-const RETRY_SAFE_WRITES = new Set(['login', 'submitReport', 'approvePlan', 'rejectPlan', 'requestEdit', 'reopenPlan',
+const RETRY_SAFE_WRITES = new Set(['login', 'logClient', 'submitReport', 'approvePlan', 'rejectPlan', 'requestEdit', 'reopenPlan',
   'cancelPlan', 'confirmCancel', 'rejectCancel', 'updatePlan', 'adjustPlan']);
 const _netMode = { jsonp: false };
 const _sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -1857,13 +1875,14 @@ async function _apiFetch(method, params) {
   if (data === undefined) {
     const err = new Error(NET_MSG); err.net = true; err.cause = lastErr;
     console.error('[API] thất bại:', params.action, lastErr && lastErr.message);
+    if (params.action !== 'logClient') setTimeout(() => logClient('network', params.action + ': ' + (lastErr && lastErr.message)), 3000);
     throw err;
   }
 
   if (isRead) {
     const ck = _cacheKey(params);
     if (data && data.success !== false && !data.error) _apiCache[ck] = { data, ts: Date.now() };
-  } else if (params.action !== 'login' && params.action !== 'uploadReportImages') {
+  } else if (params.action !== 'login' && params.action !== 'uploadReportImages' && params.action !== 'logClient') {
     // mọi thao tác ghi → xóa cache để danh sách luôn đúng trạng thái mới
     Object.keys(_apiCache).forEach(k => delete _apiCache[k]);
     kpiData = null;
@@ -3968,6 +3987,10 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
         </div>
       </div>
     </div>
+    <div style="padding:4px 16px 8px;">
+      <button class="btn btn-primary" onclick="submitReport()">📊 Gửi báo cáo</button>
+      <div style="font-size:11px;color:var(--gray2);text-align:center;margin-top:6px;">Bấm gửi → kiểm tra bảng tóm tắt → bấm "Gửi báo cáo" lần nữa để hoàn tất.</div>
+    </div>
     <div class="spacer"></div>
   `;
 
@@ -5235,8 +5258,14 @@ function renderKpi() {
   const camp = (kpiState.cp !== 'all' && kpiState.cp !== '__none') ? getCampaignByName(kpiState.cp) : null;
   const salesCamp = (camp && camp.requiresPgSales) || (kpiState.cp !== 'all' && kpiState.cp !== '__none' && cur.some(p => p.md));
   if (salesCamp) {
+    // v2.13: chế độ campaign gọn — chỉ các khối riêng của chương trình + chi phí + việc cần xử lý
     h += kpiCampaignSection(P, cur, camp || { name: kpiState.cp });
-    h += '<div class="k-period" style="margin-top:6px;">Tổng quan chung <span>· tất cả hoạt động của chương trình (booth + xe đẩy)</span></div>';
+    h += `<div class="k-grid2">
+      ${kpiBox('💰 Chi phí chi tiết', 'Chi phí cam kết = kế hoạch đã duyệt + hoàn thành.', kpiCostTable(cur))}
+      ${kpiBox('⚠️ Việc cần xử lý', 'Theo bộ lọc đang chọn, không phụ thuộc kỳ.', kpiAlerts(cur))}
+    </div></div>`;
+    el.innerHTML = h;
+    return;
   } else if (kpiState.cp === 'all') {
     const sc = (masterData.campaigns || []).filter(c => c.requiresPgSales && cpPresent.includes(c.name));
     sc.forEach(c => { h += `<div class="c-scope">🥥 <span>Đang có dữ liệu <b>${escHtml(c.name)}</b>.</span>
@@ -5252,7 +5281,7 @@ function renderKpi() {
   </div>
   <div class="k-grid2">
     ${kpiBox('📦 SKU sampling', 'SL mẫu dùng trong kỳ (đã duyệt + hoàn thành).', kpiSkuTable(cur))}
-    ${kpiBox('👥 Nhân sự thực hiện', 'Mỗi buổi tính cho từng người thực hiện.', kpiStaffTable(cur))}
+    ${kpiBox('👥 Nhân sự thực hiện', 'Phân công theo kế hoạch · số liệu theo báo cáo của chính người đó.', kpiStaffTable(cur))}
   </div>
   <div class="k-foot">tr = triệu đồng · k = nghìn đồng · CP/người = chi phí các kế hoạch đã có báo cáo ÷ (người thử booth + hộ mở cửa nghe) · DS/CP = doanh số (booth + bán hàng) ÷ chi phí các kế hoạch đã có báo cáo · Vùng lấy theo người tạo kế hoạch.</div>
   </div>`;
@@ -5311,6 +5340,99 @@ function cGroupTable(groups, K, firstHead, sortFn) {
   return `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr><th class="k-l">${firstHead}</th>${cMetricHead()}</tr></thead><tbody>
     ${rows.map(r => `<tr><td class="k-l">${r.k}</td>${cMetricCells(r.a, K)}</tr>`).join('')}
     </tbody></table></div>`;
+}
+
+/**
+ * v2.13 — SO SÁNH HIỆU QUẢ (Khu vực · Chợ · Nhân sự)
+ * Nguyên tắc: KHÔNG so tổng (vùng nhiều buổi hơn tất nhiên tổng lớn hơn) → so các chỉ số đã chia cho 1 đơn vị:
+ *   gõ cửa / xe / ca · % mở cửa · % mua · bịch / xe-ca · doanh số / buổi · CP PG / bịch · lượt thử / buổi booth
+ * Nhân sự = người BÁO CÁO ca đó (mỗi ca chỉ 1 người báo cáo → không cộng trùng). Người được phân công nhưng chưa báo cáo ca nào vẫn hiện để theo dõi.
+ */
+function kpiCompareSection(list, live, planMap, K, AVG, camp) {
+  const tab = kpiState.cmp || 'vg', sortK = kpiState.cms || 'pkXe';
+  const names = kpiData.users || {};
+  const vgName = v => v === 'Toàn quốc' ? 'Toàn quốc' : 'Miền ' + v;
+  const keyOf = { vg: s => vgName(planMap[s.id].vg), loc: s => planMap[s.id].loc + '||' + planMap[s.id].vg, rp: s => s.rp || '?' };
+  const groups = {};
+  list.forEach(s => { const k = keyOf[tab](s); (groups[k] = groups[k] || { sh: [], tas: 0, tasDays: {} }).sh.push(s); });
+  // booth: vùng/chợ theo kế hoạch; nhân sự theo báo cáo của chính người đó
+  if (tab === 'rp') {
+    const ids = {}; live.forEach(p => { ids[p.id] = p; });
+    (kpiData.reports || []).forEach(r => { if (!ids[r.id] || !(r.tas > 0)) return; const g = groups[r.rp] || (groups[r.rp] = { sh: [], tas: 0, tasDays: {} }); g.tas += r.tas; g.tasDays[r.id + '|' + r.d] = 1; });
+    // người được phân công nhưng chưa báo cáo
+    const assigned = {};
+    live.filter(p => KPI_ACTIVE.includes(p.st)).forEach(p => (p.ex || []).forEach(c => { assigned[c] = (assigned[c] || 0) + p.nd; }));
+    Object.keys(assigned).forEach(c => { const g = groups[c] || (groups[c] = { sh: [], tas: 0, tasDays: {} }); g.assigned = assigned[c]; });
+  } else {
+    live.filter(p => p.tas > 0).forEach(p => { const k = tab === 'vg' ? vgName(p.vg) : p.loc + '||' + p.vg; const g = groups[k] || (groups[k] = { sh: [], tas: 0, tasDays: {} }); g.tas += p.tas; for (let i = 0; i < p.nd; i++) g.tasDays[p.id + '|' + i] = 1; });
+  }
+  const rows = Object.entries(groups).map(([k, g]) => {
+    const a = cShiftAgg(g.sh), bd = Object.keys(g.tasDays).length;
+    a.taste = bd ? g.tas / bd : null; a.rvDay = a.nDays ? a.rv / a.nDays : null; a.assigned = g.assigned || 0;
+    a.ok = [kpiStatus(a.reach, K.reachMin, K.reachMax), kpiStatus(a.open, K.openMin, K.openMax), kpiStatus(a.conv, K.convMin, K.convMax)];
+    a.okN = a.ok.filter(x => x === 'good' || x === 'over').length; a.okT = a.ok.filter(x => x !== 'na').length;
+    let label;
+    if (tab === 'loc') { const [l, v] = k.split('||'); label = `<div class="k-loc">${escHtml(l)}</div><small>${vgName(v)}</small>`; }
+    else if (tab === 'rp') label = `<div class="k-loc">${escHtml(names[k] || userName(k))}</div>`;
+    else label = `<b>${k}</b>`;
+    return { k, label, a };
+  });
+  const sorts = {
+    pkXe:  ['Bịch / xe-ca', a => a.pkXe == null ? -1 : a.pkXe, false],
+    conv:  ['% mua', a => a.conv == null ? -1 : a.conv, false],
+    reach: ['Gõ cửa / xe / ca', a => a.reach == null ? -1 : a.reach, false],
+    cpPk:  ['CP / bịch thấp', a => a.cpPk == null ? 1e12 : a.cpPk, true],
+    ok:    ['Số KPI đạt', a => a.okN * 100 + (a.pkXe || 0), false],
+  };
+  const S = sorts[sortK] || sorts.pkXe;
+  rows.sort((x, y) => { const vx = S[1](x.a), vy = S[1](y.a); return S[2] ? vx - vy : vy - vx; });
+  const withData = rows.filter(r => r.a.n > 0);
+  const maxPk = Math.max(...withData.map(r => r.a.pkXe || 0), 0.01);
+  const avgPk = AVG.pkXe;
+  const pkCell = a => {
+    if (a.pkXe == null) return '<span class="k-dim">—</span>';
+    const cls = avgPk == null ? '' : a.pkXe >= avgPk * 1.1 ? 'k-good' : a.pkXe <= avgPk * 0.9 ? 'k-bad' : 'k-warn';
+    return `<b class="${cls}">${a.pkXe.toFixed(1).replace('.', ',')}</b>${kpiBar(a.pkXe, maxPk, 'p')}`;
+  };
+  const okCell = a => a.okT ? `<span class="k-pill ${a.okN === a.okT ? 'k-good' : a.okN === 0 ? 'k-bad' : 'k-warn'}">${a.okN}/${a.okT}</span>` : '<span class="k-dim">—</span>';
+  const tr = (r, i, isAvg) => {
+    const a = r.a, none = a.n === 0;
+    const medal = isAvg ? '' : none ? '' : i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : '';
+    return `<tr class="${isAvg ? 'k-sub' : ''}">
+      <td class="k-l">${medal ? r.label.replace(/^(<div class="k-loc">|<b>)?/, m => (m || '') + medal) : r.label}${tab === 'rp' && !isAvg ? `<small>${a.assigned ? 'phân công ' + a.assigned + ' buổi · ' : ''}${none ? '<span class="k-bad">chưa báo cáo ca nào</span>' : 'báo cáo ' + a.n + ' ca'}</small>` : ''}</td>
+      <td>${none ? '<span class="k-dim">—</span>' : fN(a.nDays)}</td>
+      <td>${none ? '<span class="k-dim">—</span>' : fN(a.n) + '<small>' + fN(a.xe) + ' xe-ca</small>'}</td>
+      <td>${none ? '' : cPill(a.reach, kpiStatus(a.reach, K.reachMin, K.reachMax), a.reach == null ? '—' : Math.round(a.reach))}</td>
+      <td>${none ? '' : cPill(a.open, kpiStatus(a.open, K.openMin, K.openMax), fP(a.open))}</td>
+      <td>${none ? '' : cPill(a.conv, kpiStatus(a.conv, K.convMin, K.convMax), fP(a.conv))}</td>
+      <td>${none ? '' : pkCell(a)}</td>
+      <td>${a.rvDay == null ? '<span class="k-dim">—</span>' : fM(a.rvDay)}</td>
+      <td>${a.cpPk == null ? '<span class="k-dim">—</span>' : fN(a.cpPk) + 'đ'}</td>
+      <td>${a.taste == null ? '<span class="k-dim">—</span>' : cPill(a.taste, kpiStatus(a.taste, K.tasteMin, K.tasteMax), fN(a.taste))}</td>
+      <td>${none ? '' : fN(a.pk) + '<small>' + fM(a.rv) + '</small>'}</td>
+      <td>${isAvg ? '' : okCell(a)}</td>
+    </tr>`;
+  };
+  // dòng trung bình toàn chương trình (cùng bộ lọc)
+  const avgA = Object.assign({}, AVG);
+  const allTas = live.filter(p => p.tas > 0); const allTd = allTas.reduce((t, p) => t + p.nd, 0);
+  avgA.taste = allTd ? allTas.reduce((t, p) => t + p.tas, 0) / allTd : null; avgA.rvDay = AVG.nDays ? AVG.rv / AVG.nDays : null;
+  const tabs = [['vg', '🗺️ Khu vực'], ['loc', '🏪 Chợ'], ['rp', '👤 Nhân sự']].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" onclick="kpiSet('cmp','${k}')">${l}</button>`).join('');
+  const sortBtns = Object.entries(sorts).map(([k, v]) => `<button class="${sortK === k ? 'on' : ''}" onclick="kpiSet('cms','${k}')">${v[0]}</button>`).join('');
+  const firstHead = tab === 'vg' ? 'Khu vực' : tab === 'loc' ? 'Chợ' : 'Nhân sự (người báo cáo)';
+  const body = rows.length ? `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr>
+      <th class="k-l">${firstHead}</th><th>Ngày bán</th><th>Ca · xe-ca</th><th>Gõ cửa<br><small>/xe/ca</small></th><th>% mở cửa</th><th>% mua</th>
+      <th>Bịch<br><small>/xe-ca</small></th><th>Doanh số<br><small>/ngày bán</small></th><th>CP PG<br><small>/bịch</small></th><th>Thử booth<br><small>/buổi</small></th><th>Tổng bịch<br><small>doanh số</small></th><th>Đạt KPI</th></tr></thead>
+      <tbody>${tr({ label: '<b>Trung bình chương trình</b>', a: avgA }, 0, true)}${rows.map((r, i) => tr(r, i, false)).join('')}</tbody></table></div>`
+    : '<div class="k-empty">Chưa có dữ liệu</div>';
+  return `<section class="k-box k-ncd"><div class="k-box-h"><h3>⚖️ So sánh hiệu quả</h3>
+      <p>So sánh <b>theo đơn vị</b> (mỗi xe-ca, mỗi ngày bán, mỗi bịch) thay vì tổng — vùng/chợ/người làm nhiều buổi hơn không tự nhiên "thắng". Pill xanh/đỏ = so với KPI; số Bịch/xe-ca: xanh ≥ 110% trung bình, đỏ ≤ 90%. Đạt KPI = số chỉ tiêu đạt trong 3 chỉ tiêu xe đẩy (gõ cửa, mở cửa, mua).</p></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;">
+      <div class="k-seg">${tabs}</div>
+      <span style="font-size:11px;color:var(--gray2);margin-left:6px;">Xếp theo:</span><div class="k-seg k-seg-sm">${sortBtns}</div>
+    </div>${body}
+    ${tab === 'rp' ? '<div class="c-note">Nhân sự = người gửi báo cáo ca. Mỗi ca chỉ 1 người báo cáo nên không bị cộng trùng; người cùng đi ca nhưng không gửi báo cáo sẽ không có số liệu của ca đó.</div>' : ''}
+  </section>`;
 }
 
 function kpiCampaignSection(P, plansCur, camp) {
@@ -5438,35 +5560,13 @@ function kpiCampaignSection(P, plansCur, camp) {
   Object.keys(byWeek).sort().reverse().forEach(w => { wk[`${fmtDate(w).substring(0, 5)} → ${fmtDate(addDays(w, 6)).substring(0, 5)}`] = byWeek[w]; });
   h += kpiBox('📈 Diễn biến theo tuần', 'Tuần tính từ thứ 2. Ô xanh = đạt KPI, ô đỏ = dưới KPI.', cGroupTable(wk, K, 'Tuần'), 'k-ncd');
 
-  // ── 5. So sánh ca & vùng ──
-  const byType = {}, byReg = {};
-  list.forEach(s => {
-    (byType[cShiftType(s)] = byType[cShiftType(s)] || []).push(s);
-    const p = planMap[s.id], rk = `<b>${p.ch}</b> · ${p.vg}`; (byReg[rk] = byReg[rk] || []).push(s);
-  });
-  h += `<div class="k-grid2">
-    ${kpiBox('⏰ So sánh hình thức ca', 'Ca sáng / chiều (2 ca ngắn) và 1 ca liên tục — dùng để chọn cách xếp ca cho 2027.', cGroupTable(byType, K, 'Hình thức'), 'k-ncd')}
-    ${kpiBox('📍 Theo kênh · vùng', 'Chi phí PG thực tế = số PG thực tế × đơn giá ca.', cGroupTable(byReg, K, 'Kênh · Vùng'), 'k-ncd')}
-  </div>`;
+  // ── 5. So sánh hình thức ca ──
+  const byType = {};
+  list.forEach(s => { (byType[cShiftType(s)] = byType[cShiftType(s)] || []).push(s); });
+  h += kpiBox('⏰ So sánh hình thức ca', 'Ca sáng / chiều (2 ca ngắn) và 1 ca liên tục — dùng để chọn cách xếp ca cho 2027. Các số đã quy về 1 xe-ca nên so sánh trực tiếp được.', cGroupTable(byType, K, 'Hình thức'), 'k-ncd');
 
-  // ── 6. Xếp hạng điểm bán & nhân sự ──
-  const sorts = { pk: ['Bịch', (a, b) => b.a.pk - a.a.pk], conv: ['% mua', (a, b) => (b.a.conv || 0) - (a.a.conv || 0)],
-                  reach: ['Gõ cửa/xe/ca', (a, b) => (b.a.reach || 0) - (a.a.reach || 0)], cp: ['CP/bịch thấp', (a, b) => (a.a.cpPk == null ? 1e12 : a.a.cpPk) - (b.a.cpPk == null ? 1e12 : b.a.cpPk)] };
-  const S = sorts[kpiState.cl] || sorts.pk;
-  const tabs = Object.entries(sorts).map(([k, v]) => `<button class="${kpiState.cl === k ? 'on' : ''}" onclick="kpiSet('cl','${k}')">${v[0]}</button>`).join('');
-  const byLoc = {}, byRep = {}, names = kpiData.users || {};
-  list.forEach(s => {
-    const p = planMap[s.id];
-    const lk = `<div class="k-loc">${escHtml(p.loc)}</div><small>${p.ch} · ${p.vg}</small>`; (byLoc[lk] = byLoc[lk] || []).push(s);
-    const rk = `<div class="k-loc">${escHtml(names[s.rp] || userName(s.rp))}</div>`; (byRep[rk] = byRep[rk] || []).push(s);
-  });
-  const top = g => { const o = {}; Object.entries(g).map(([k, l]) => ({ k, l, a: cShiftAgg(l) })).sort(S[1]).slice(0, 10).forEach(x => { o[x.k] = x.l; }); return o; };
-  h += `<section class="k-box k-ncd"><div class="k-box-h"><h3>🏆 Xếp hạng điểm bán & nhân sự</h3><p>Top 10 theo tiêu chí đang chọn. Nhân sự = người báo cáo ca.</p></div>
-    <div class="k-seg k-seg-sm" style="margin-bottom:10px;">${tabs}</div>
-    <div class="k-grid2">
-      <div><div class="k-rank-h good">Điểm bán</div>${cGroupTable(top(byLoc), K, 'Điểm bán', S[1])}</div>
-      <div><div class="k-rank-h good">Nhân sự</div>${cGroupTable(top(byRep), K, 'Nhân sự', S[1])}</div>
-    </div></section>`;
+  // ── 6. So sánh hiệu quả: Khu vực / Chợ / Nhân sự ──
+  h += kpiCompareSection(list, live, planMap, K, A, camp);
 
   h += `<div class="k-foot">KPI mục tiêu lấy từ sheet CHUONG_TRINH (cột K–U). Giá bán cố định ${fN((camp && camp.unitPrice) || 10000)}đ/${escHtml((camp && camp.unitLabel) || 'bịch')}.
     Chỉ số gõ cửa & mở cửa chỉ tính các ca có nhập số hộ gõ cửa (báo cáo từ v2.10). Lượt thử booth/ca tính theo số buổi có booth.</div>`;
@@ -5660,21 +5760,35 @@ function kpiSkuTable(list) {
   </tbody></table></div>`;
 }
 
+/**
+ * v2.13: Nhân sự — tách 2 phần:
+ *   • Phân công: số buổi được xếp làm (theo danh sách người thực hiện của kế hoạch)
+ *   • Thực báo cáo: số liệu do CHÍNH người đó gửi (không cộng số của cả kế hoạch cho mọi người như trước)
+ */
 function kpiStaffTable(list) {
-  const names = kpiData.users || {}, agg = {};
-  list.filter(p => !KPI_VOID.includes(p.st)).forEach(p => (p.ex.length ? p.ex : [p.cr]).forEach(c => {
-    const o = agg[c] || (agg[c] = { c, kh: 0, ht: 0, tas: 0, sal: 0, pk: 0, chs: {} });
-    o.kh += p.nd; o.chs[p.ch + ' · ' + p.vg] = 1;
-    if (p.st === 'hoan_thanh') { o.ht += p.nd; o.tas += p.tas + (p.rc || 0); o.sal += p.sal; o.pk += p.pk || 0; }
-  }));
-  const arr = Object.values(agg).sort((a, b) => b.ht - a.ht || b.kh - a.kh);
+  const names = kpiData.users || {}, agg = {}, ids = {};
+  const get = c => agg[c] || (agg[c] = { c, kh: 0, ht: 0, bc: 0, tas: 0, rc: 0, pk: 0, sal: 0, chs: {} });
+  list.filter(p => !KPI_VOID.includes(p.st)).forEach(p => {
+    ids[p.id] = p;
+    (p.ex.length ? p.ex : [p.cr]).forEach(c => { const o = get(c); o.kh += p.nd; if (p.st === 'hoan_thanh') o.ht += p.nd; o.chs[p.ch + ' · ' + p.vg] = 1; });
+  });
+  const reps = kpiData.reports;
+  if (Array.isArray(reps)) reps.forEach(r => {
+    const p = ids[r.id]; if (!p || !r.rp) return;
+    const o = get(r.rp); o.bc++; o.tas += r.tas; o.rc += r.rc; o.pk += r.pk; o.sal += r.sal + r.cs; o.chs[p.ch + ' · ' + p.vg] = 1;
+  });
+  const arr = Object.values(agg).sort((a, b) => b.sal - a.sal || b.bc - a.bc || b.kh - a.kh);
   if (!arr.length) return '<div class="k-empty">Chưa có dữ liệu</div>';
   const hasPk = arr.some(o => o.pk > 0);
-  const shown = kpiState.staffAll ? arr : arr.slice(0, 10);
-  return `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr><th class="k-l">Nhân viên</th><th>KH</th><th>HT</th><th>% HT</th><th>Người</th>${hasPk ? '<th>Bịch</th>' : ''}<th>Doanh số</th></tr></thead><tbody>
-    ${shown.map(o => { const r = o.kh ? o.ht / o.kh : null; return `<tr><td class="k-l"><div class="k-loc">${escHtml(names[o.c] || userName(o.c))}</div><small>${Object.keys(o.chs).join(', ')}</small></td><td>${fN(o.kh)}</td><td><b>${fN(o.ht)}</b></td><td><span class="k-pill ${rateCls(r)}">${fP(r)}</span></td><td>${fN(o.tas)}</td>${hasPk ? `<td>${fN(o.pk)}</td>` : ''}<td>${fM(o.sal)}</td></tr>`; }).join('')}
+  const shown = kpiState.staffAll ? arr : arr.slice(0, 12);
+  return `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr><th class="k-l">Nhân viên</th><th>Phân công<br><small>buổi</small></th><th>Đã HT<br><small>buổi</small></th><th>Đã báo cáo<br><small>lần</small></th><th>Người thử + nghe</th>${hasPk ? '<th>Bịch</th>' : ''}<th>Doanh số</th></tr></thead><tbody>
+    ${shown.map(o => `<tr><td class="k-l"><div class="k-loc">${escHtml(names[o.c] || userName(o.c))}</div><small>${Object.keys(o.chs).join(', ')}</small></td>
+      <td>${fN(o.kh)}</td><td>${fN(o.ht)}</td>
+      <td>${o.bc ? '<b>' + fN(o.bc) + '</b>' : (o.kh ? '<span class="k-pill k-bad">chưa BC</span>' : '0')}</td>
+      <td>${o.bc ? fN(o.tas + o.rc) : '<span class="k-dim">—</span>'}</td>${hasPk ? `<td>${o.bc ? fN(o.pk) : '<span class="k-dim">—</span>'}</td>` : ''}<td>${o.bc ? fM(o.sal) : '<span class="k-dim">—</span>'}</td></tr>`).join('')}
   </tbody></table></div>
-  ${arr.length > 10 ? `<button class="k-more" onclick="kpiSet('staffAll',${!kpiState.staffAll})">${kpiState.staffAll ? 'Thu gọn' : 'Xem tất cả ' + arr.length + ' người'}</button>` : ''}`;
+  <div class="c-note">Số liệu (người thử, bịch, doanh số) chỉ tính các báo cáo do chính nhân viên đó gửi. "Phân công" = số buổi có tên trong danh sách người thực hiện.</div>
+  ${arr.length > 12 ? `<button class="k-more" onclick="kpiSet('staffAll',${!kpiState.staffAll})">${kpiState.staffAll ? 'Thu gọn' : 'Xem tất cả ' + arr.length + ' người'}</button>` : ''}`;
 }
 
 // =====================================================
