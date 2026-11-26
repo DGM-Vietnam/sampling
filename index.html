@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.14.1">
+<meta name="version" content="2.15.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1574,10 +1574,30 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 </nav>
 
 <script>
+// v2.15: kiểm tra trình duyệt quá cũ (cần Chrome 80+). Trình duyệt cũ không chạy được app → báo rõ + ghi log về máy chủ.
+(function () {
+  var ok = true;
+  try { new Function('var a={b:1}; return a?.b ?? 0;')(); } catch (e) { ok = false; }
+  if (ok) return;
+  window.__oldBrowser = true;
+  document.addEventListener('DOMContentLoaded', function () {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;inset:0;z-index:3000;background:#1B3A57;color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:sans-serif;';
+    d.innerHTML = '<div><div style="font-size:42px;">⚠️</div><div style="font-size:18px;font-weight:800;margin:8px 0;">Trình duyệt quá cũ, không chạy được app</div>' +
+      '<div style="font-size:14px;line-height:1.6;">Vào <b>CH Play</b> → cập nhật <b>Google Chrome</b> và <b>Android System WebView</b>, rồi mở link app bằng <b>Chrome</b> (không mở trong Zalo/Facebook).</div></div>';
+    document.body.appendChild(d);
+  });
+  try {
+    var body = JSON.stringify({ action: 'logClient', kind: 'old-browser', message: 'Trình duyệt không hỗ trợ cú pháp mới', userCode: '-', appVersion: '2.15.0', screen: '', ua: navigator.userAgent });
+    new Image().src = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec?payload=' + encodeURIComponent(body);
+  } catch (e) {}
+})();
+</script>
+<script>
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.14.1';
+const APP_VERSION = '2.15.0';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const TARGET_IMG_KB = 70;  // v2.12: nén ~70KB/ảnh (cạnh dài 1024px) — đủ đọc chữ Timemark, tải nhanh hơn
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
@@ -1862,14 +1882,14 @@ async function _apiFetch(method, params) {
   let data, lastErr;
 
   if (!(canJsonp && _netMode.jsonp)) {
-    const attempts = isRead ? 3 : 1;
+    const attempts = isRead ? 3 : (params.action === 'submitReport' ? 3 : 1);   // v2.15: submitReport an toàn khi gửi lại (subId)
     for (let i = 0; i < attempts && data === undefined; i++) {
       try { data = await _fetchJson(fetchUrl, fetchOptions, isRead ? 30000 : 120000); }
       catch (e) {
         lastErr = e;
         console.warn('[API] lần ' + (i + 1) + ' lỗi:', params.action, e.message);
         if (!isNetErr(e)) throw e;
-        if (i < attempts - 1) await _sleep(i === 0 ? 1200 : 3500);
+        if (i < attempts - 1) await _sleep(i === 0 ? 1500 : 4000);
       }
     }
   }
@@ -1931,6 +1951,7 @@ async function doLogin() {
     if (res.success) {
       currentUser = res.user;
       sessionStorage.setItem('dgm_user', JSON.stringify(currentUser));
+      try { localStorage.setItem('dgm_user_keep', JSON.stringify({ u: currentUser, ts: Date.now() })); } catch (e) {}
       await loadMasterData();
       setupHome();
       showScreen('home');
@@ -1949,6 +1970,7 @@ document.getElementById('btn-logout').addEventListener('click', () => {
   if (confirm('Bạn có muốn đăng xuất?')) {
     currentUser = null;
     sessionStorage.removeItem('dgm_user');
+    try { localStorage.removeItem('dgm_user_keep'); } catch (e) {}
     sessionStorage.removeItem('dgm_masterdata_v211');
     document.body.classList.remove('desktop-mode', 'mgr-mobile', 'kpi-role');
     showScreen('login');
@@ -1961,7 +1983,7 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 const _userNameCache = {};
 
 async function loadMasterData(forceRefresh) {
-  const CACHE_KEY = 'dgm_masterdata_v211';
+  const CACHE_KEY = 'dgm_masterdata_v211';   // (v2.15 thêm reportWindow — app tự tải lại do đổi phiên bản)
   const CACHE_TTL = 30 * 60 * 1000;
 
   if (!forceRefresh) {
@@ -1991,6 +2013,7 @@ async function loadMasterData(forceRefresh) {
       masterData.campaigns = b.campaigns || [];
       masterData.userNames = b.userNames || {};
       masterData.minAppVersion = b.minAppVersion || '';
+      masterData.reportWindow  = b.reportWindow || null;   // v2.15: khung giờ báo cáo ca {early, grace}
       Object.assign(_userNameCache, masterData.userNames);
       masterData.users.forEach(usr => { _userNameCache[usr.code] = usr.name; });
     }
@@ -2518,7 +2541,7 @@ function reportCardHtml(r, p) {
   let salesHtml = '';
   if (hasSales) {
     const kn = r.salesShifts.reduce((a, s) => a + (Number(s.knocked) || 0), 0);
-    const rows = r.salesShifts.map(s => `<tr><td>Ca ${s.no}${s.day ? ' · ' + fmtDate(s.day).substring(0,5) : ''}<br><span style="color:var(--gray2);font-size:10px;">${fmtTime(s.start)}–${fmtTime(s.end)} · ${s.pgCount || '?'} PG · ${s.carts != null ? s.carts : (s.pgCount || '?')} xe</span></td>
+    const rows = r.salesShifts.map(s => `<tr><td>Ca ${s.no}${s.day ? ' · ' + fmtDate(s.day).substring(0,5) : ''}${Array.isArray(s.adds) && s.adds.length ? ' <span style="color:var(--purple);font-size:10px;">(+' + s.adds.length + ' bổ sung)</span>' : ''}<br><span style="color:var(--gray2);font-size:10px;">${fmtTime(s.start)}–${fmtTime(s.end)} · ${s.pgCount || '?'} PG · ${s.carts != null ? s.carts : (s.pgCount || '?')} xe</span></td>
       <td>${s.knocked ? fmtNum(s.knocked) : '—'}</td><td>${fmtNum(s.reached)}</td><td>${fmtNum(s.buyers)}</td><td>${fmtNum(s.packs)}</td><td>${fmtNum(s.revenue)}</td></tr>`).join('');
     const open = kn ? Math.round(r.reached / kn * 100) + '%' : '—';
     const conv = r.reached ? Math.round(r.buyers / r.reached * 100) + '%' : '—';
@@ -2529,6 +2552,7 @@ function reportCardHtml(r, p) {
   }
   return `<div class="card"><div class="card-body">
     ${dr('Người BC', userName(r.reporter))} ${dr('Thời gian', fmtDateTime(r.reportedAt))}
+    ${r.shiftLabel ? dr('Ca báo cáo', escHtml(r.shiftLabel)) : ''}
     ${(!hasSales || r.actualTasters) ? dr(hasSales ? 'Người thử tại booth' : 'Số người thử', fmtNum(r.actualTasters)) : ''}
     ${(!hasSales || r.actualSales) ? dr(hasSales ? 'Doanh số tại booth' : 'Doanh số thực tế', fmtCurrency(r.actualSales)) : ''}
     ${dr('Phản hồi KH', escHtml(r.feedback || '—'))}
@@ -3854,8 +3878,30 @@ async function submitPlan() {
 }
 
 // =====================================================
-// REPORT FORM (v2.9: bán hàng theo ca)
+// REPORT FORM — v2.15
+//  • Ca báo cáo: mở từ 15' trước giờ bắt đầu → 2 tiếng sau khi ca kết thúc (server trả về qua getBootstrap).
+//    Trong khung giờ đó ca đã báo cáo vẫn BỔ SUNG được (số mới cộng thêm vào số cũ). Không tự chọn ca — sales phải bấm chọn.
+//  • Ảnh: campaign tối đa 100 ảnh/lần · nén ngay khi chọn (1 lần đọc ảnh, ít vòng nén) · xem trước bằng ảnh thu nhỏ 160px
+//    (ảnh 1024px chỉ giữ để gửi) → máy Android RAM thấp không bị trình duyệt đóng khi mở thư viện ảnh.
+//  • Tải ảnh lên NỀN ngay sau khi chọn, trong lúc nhập số liệu → bấm Gửi chỉ còn lưu báo cáo.
+//  • Bản nháp lưu TỪNG ẢNH vào IndexedDB (trước đây ghi lại toàn bộ ảnh mỗi lần thay đổi).
+//  • Phát hiện trang bị Android đóng khi đang chọn ảnh → báo rõ cách khắc phục + ghi log 'picker-reload'.
 // =====================================================
+const IMG_GROUPS     = ['imgLocation', 'imgFood', 'imgOverview', 'imgOther', 'imgCart'];
+const IMG_MAX_STD    = { imgLocation: 10, imgFood: 20, imgOverview: 20, imgOther: 40, imgCart: 20 };
+const IMG_MAX_CAMP   = { imgLocation: 10, imgFood: 20, imgOverview: 40, imgOther: 100, imgCart: 100 };
+const IMG_TOTAL_CAMP = 100;          // campaign: tối đa 100 ảnh cho 1 lần gửi
+const IMG_TOTAL_STD  = 110;
+const UP_CHUNK = 4;                  // 4 ảnh / lần gọi máy chủ (~300KB)
+function imgMax(key) { return ((reportFormData && reportFormData._hasSales) ? IMG_MAX_CAMP : IMG_MAX_STD)[key] || 40; }
+function imgTotalMax() { return (reportFormData && reportFormData._hasSales) ? IMG_TOTAL_CAMP : IMG_TOTAL_STD; }
+function imgTotal(R) { R = R || reportFormData; return IMG_GROUPS.reduce((a, k) => a + ((R[k] || []).length), 0); }
+function newImgId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function shiftEarlyMin() { const w = masterData.reportWindow || {}; return w.early != null ? Number(w.early) : 15; }
+function shiftGraceMin() { const w = masterData.reportWindow || {}; return w.grace != null ? Number(w.grace) : 120; }
+function canBypassWindow() { return !!currentUser && (currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing'); }
+function _hash(s) { let h = 5381; s = String(s); for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+
 async function initReport(planId) {
   currentPlanId = planId;
   if (!window._planCache) window._planCache = {};
@@ -3875,7 +3921,7 @@ async function initReport(planId) {
   reportFormData = {
     imgLocation:[], imgFood:[], imgOverview:[], imgOther:[], imgCart:[],
     samplesUsed:[], markCompleted: false, salesShifts: [],
-    _hasSales: hasSales, _plan: plan,
+    _hasSales: hasSales, _plan: plan, _selShift: null, _busy: 0, _inflight: 0, _seq: 0,
     _unitPrice: (camp && camp.unitPrice) || 10000, _unitLabel: (camp && camp.unitLabel) || 'bịch',
   };
   const locLabel = plan.locationName ? `${plan.locationName} · ${fmtDate(plan.date)}` : planId;
@@ -3888,92 +3934,183 @@ async function initReport(planId) {
   showScreen('report');
   try { localStorage.setItem('dgm_open_report', JSON.stringify({ planId, user: currentUser.code, ts: Date.now() })); } catch (e) {}
   await restoreDraft(planId);
+  checkPickerReload(planId);
+  logDeviceOnce(planId);
+  updateUpStatus(reportFormData);
+  setTimeout(() => uploadPump(reportFormData), 800);   // ảnh khôi phục từ nháp mà chưa tải lên → tải nền
+}
+
+/** v2.15: ghi 1 lần cấu hình máy Android (RAM, dung lượng trống) để tra lỗi — không ghi với iPhone/máy tính. */
+function logDeviceOnce(planId) {
+  try {
+    if (!/Android/i.test(navigator.userAgent)) return;
+    const k = 'dgm_devlog_' + planId;
+    if (sessionStorage.getItem(k)) return;
+    sessionStorage.setItem(k, '1');
+    const mem = navigator.deviceMemory || '?';
+    const est = (navigator.storage && navigator.storage.estimate) ? navigator.storage.estimate() : Promise.resolve(null);
+    est.then(e => logClient('device', `RAM ~${mem}GB · bộ nhớ trình duyệt còn ${e && e.quota ? Math.round((e.quota - e.usage) / 1048576) + 'MB' : '?'} · màn ${screen.width}x${screen.height}`))
+       .catch(() => logClient('device', `RAM ~${mem}GB`));
+  } catch (e) {}
 }
 
 // =====================================================
-// v2.14 — BẢN NHÁP BÁO CÁO
-// Tự lưu số liệu (localStorage) + ảnh đã nén (IndexedDB) mỗi khi nhập. Trên Android máy yếu, trình duyệt hay tự tải
-// lại trang khi mở thư viện ảnh → mở lại app sẽ quay về đúng form với đủ số liệu & ảnh. Gửi thành công → xoá nháp.
+// BẢN NHÁP BÁO CÁO (v2.15)
+// Số liệu → localStorage. Ảnh → IndexedDB, MỖI ẢNH 1 bản ghi (chỉ ghi ảnh mới, xoá ảnh bị bỏ).
 // =====================================================
 const DRAFT_TTL = 48 * 3600 * 1000;
-let _draftTimer = null;
+let _draftTimer = null, _idbDb = null;
 function draftKey(planId) { return 'dgm_draft_' + (currentUser && currentUser.code) + '_' + planId; }
 function _idb() {
+  if (_idbDb) return Promise.resolve(_idbDb);
   return new Promise((res, rej) => {
     try { const r = indexedDB.open('dgm_drafts', 1);
       r.onupgradeneeded = () => r.result.createObjectStore('imgs');
-      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); }
+      r.onsuccess = () => { _idbDb = r.result; _idbDb.onclose = () => { _idbDb = null; }; res(_idbDb); };
+      r.onerror = () => rej(r.error); } catch (e) { rej(e); }
   });
 }
 async function _idbOp(mode, fn) {
   const db = await _idb();
-  return new Promise((res, rej) => { const tx = db.transaction('imgs', mode); const st = tx.objectStore('imgs'); const rq = fn(st);
-    tx.oncomplete = () => res(rq && rq.result); tx.onerror = () => rej(tx.error); });
+  return new Promise((res, rej) => {
+    let tx; try { tx = db.transaction('imgs', mode); } catch (e) { _idbDb = null; return rej(e); }
+    const st = tx.objectStore('imgs'); const rq = fn(st);
+    tx.oncomplete = () => res(rq && rq.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+  });
 }
+function _imgRange(planId) { const dk = draftKey(planId) + '|'; return IDBKeyRange.bound(dk, dk + '￿'); }
+function idbPutImg(planId, e) {
+  if (!e || !e.id) return;
+  _idbOp('readwrite', st => st.put({ id: e.id, k: e.k, name: e.name, dataUrl: e.dataUrl, thumb: e.thumb || '' }, draftKey(planId) + '|' + e.id)).catch(() => {});
+}
+function idbDelImg(planId, id) { if (id) _idbOp('readwrite', st => st.delete(draftKey(planId) + '|' + id)).catch(() => {}); }
+
 function saveDraftSoon() { clearTimeout(_draftTimer); _draftTimer = setTimeout(saveDraft, 500); }
-async function saveDraft() {
+function saveDraft() {
   const R = reportFormData;
   if (!R || !R._plan || !currentPlanId || !document.getElementById('screen-report').classList.contains('active')) return;
   const v = id => (document.getElementById(id) || {}).value || '';
-  const d = { ts: Date.now(), day: R._salesDay || '', sel: R._selShift || null, vals: R._vals || {},
+  const imgs = [], urls = {};
+  IMG_GROUPS.forEach(k => (R[k] || []).forEach(e => { imgs.push([k, e.id]); if (e._url) urls[e.id] = e._url; }));
+  const d = { v: 215, ts: Date.now(), day: R._salesDay || '', sel: R._selShift || null, vals: R._vals || {},
     tasters: v('r-tasters'), sales: v('r-sales'), feedback: v('r-feedback'), notes: v('r-notes'),
-    samples: R.samplesUsed || [], done: !!R.markCompleted, folderIds: R._folderIds || null, folderUrl: R._folderUrl || '', tag: R._tag || '' };
+    samples: R.samplesUsed || [], done: !!R.markCompleted, folderIds: R._folderIds || null, folderUrl: R._folderUrl || '',
+    tag: R._tag || '', seq: R._seq || 0, imgs, urls };
   try { localStorage.setItem(draftKey(currentPlanId), JSON.stringify(d)); } catch (e) {}
-  if (R._imgDirty) {
-    R._imgDirty = false;
-    const groups = {};
-    ['imgLocation', 'imgFood', 'imgOverview', 'imgOther', 'imgCart'].forEach(k => { groups[k] = (R[k] || []).map(x => ({ name: x.name, dataUrl: x.dataUrl, _url: x._url || '' })); });
-    try { await _idbOp('readwrite', st => st.put(groups, draftKey(currentPlanId))); } catch (e) {}
-  }
 }
 function clearDraft(planId) {
-  try { localStorage.removeItem(draftKey(planId)); localStorage.removeItem('dgm_open_report'); } catch (e) {}
-  _idbOp('readwrite', st => st.delete(draftKey(planId))).catch(() => {});
+  try { localStorage.removeItem(draftKey(planId)); localStorage.removeItem('dgm_open_report'); localStorage.removeItem('dgm_picking'); } catch (e) {}
+  _idbOp('readwrite', st => { st.delete(draftKey(planId)); return st.delete(_imgRange(planId)); }).catch(() => {});
 }
 async function discardDraft() {
   if (!confirm('Bỏ bản nháp và nhập lại từ đầu?')) return;
   clearDraft(currentPlanId);
   await initReport(currentPlanId);
 }
+/** Ảnh thu nhỏ từ ảnh đã nén (dùng cho nháp định dạng cũ 2.14) */
+function makeThumb(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => { try { const s = Math.min(160 / img.width, 160 / img.height, 1), c = document.createElement('canvas');
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const t = c.toDataURL('image/jpeg', 0.6); c.width = c.height = 0; resolve(t); } catch (e) { resolve(''); } };
+    img.onerror = () => resolve('');
+    img.src = dataUrl;
+  });
+}
 async function restoreDraft(planId) {
   let d = null;
   try { d = JSON.parse(localStorage.getItem(draftKey(planId)) || 'null'); } catch (e) {}
-  let imgs = null;
-  try { imgs = await _idbOp('readonly', st => st.get(draftKey(planId))); } catch (e) {}
   if (d && Date.now() - d.ts > DRAFT_TTL) { clearDraft(planId); return; }
   const R = reportFormData;
-  const nImg = imgs ? Object.values(imgs).reduce((a, l) => a + (l || []).length, 0) : 0;
+  const entries = [];
+  try {
+    if (d && Array.isArray(d.imgs) && d.imgs.length) {
+      const all = await _idbOp('readonly', st => st.getAll(_imgRange(planId))) || [];
+      const byId = {}; all.forEach(x => { if (x && x.id) byId[x.id] = x; });
+      d.imgs.forEach(([k, id]) => { const x = byId[id]; if (x && R[k]) entries.push({ id, k, name: x.name, dataUrl: x.dataUrl, thumb: x.thumb, _url: (d.urls || {})[id] || undefined }); });
+    } else {
+      // nháp định dạng cũ (v2.14): 1 bản ghi chứa tất cả ảnh → chuyển sang định dạng mới
+      const old = await _idbOp('readonly', st => st.get(draftKey(planId)));
+      if (old) {
+        for (const k of Object.keys(old)) for (const x of (old[k] || [])) {
+          if (!R[k] || !x || !x.dataUrl) continue;
+          const e = { id: newImgId(), k, name: x.name, dataUrl: x.dataUrl, thumb: await makeThumb(x.dataUrl), _url: x._url || undefined };
+          entries.push(e); idbPutImg(planId, e);
+        }
+        _idbOp('readwrite', st => st.delete(draftKey(planId))).catch(() => {});
+      }
+    }
+  } catch (e) {}
+  const nImg = entries.length;
   const hasVals = d && (Object.keys(d.vals || {}).length || d.tasters || d.sales || d.feedback || d.notes);
   if (!hasVals && !nImg) return;
   if (d) {
     if (R._hasSales) {
       const sd = document.getElementById('rs-day');
       if (d.day && (!sd || [...sd.options].some(o => o.value === d.day))) { R._salesDay = d.day; if (sd) sd.value = d.day; }
-      R._vals = d.vals || {}; if (d.sel) R._selShift = d.sel;
+      R._vals = d.vals || {};
+      // giữ ca đã chọn CHỈ khi nháp vừa lưu < 20 phút (trang bị tải lại giữa chừng). Lâu hơn → bắt chọn ca lại.
+      if (d.sel && Date.now() - d.ts < 20 * 60000) R._selShift = d.sel;
       renderSaleCards();
     }
     const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
     set('r-tasters', d.tasters); set('r-sales', d.sales); set('r-feedback', d.feedback); set('r-notes', d.notes);
     R.markCompleted = !!d.done; const tg = document.getElementById('toggle-completed'); if (tg) tg.classList.toggle('on', R.markCompleted);
-    R._draftSamples = d.samples || []; R._folderIds = d.folderIds || null; R._folderUrl = d.folderUrl || ''; R._tag = d.tag || '';
+    R._draftSamples = d.samples || []; R._folderIds = d.folderIds || null; R._folderUrl = d.folderUrl || ''; R._tag = d.tag || ''; R._seq = Number(d.seq) || 0;
     if (R._draftSamples.length) loadApprovedSamplesForReport(planId);
   }
-  if (imgs) Object.keys(imgs).forEach(k => { if (!R[k]) return; (imgs[k] || []).forEach(x => { const e = { name: x.name, dataUrl: x.dataUrl, _url: x._url || undefined }; R[k].push(e); addImagePreview(k, e); }); refreshImageCount(k); });
+  entries.forEach(e => { R[e.k].push(e); addImagePreview(e.k, e); });
+  IMG_GROUPS.forEach(k => refreshImageCount(k));
   logClient('draft-restore', `khôi phục nháp: ${nImg} ảnh, số liệu ${hasVals ? 'có' : 'không'}`);
   const c = document.getElementById('report-content');
   if (c) {
     const t = d ? new Date(d.ts) : new Date();
     c.insertAdjacentHTML('afterbegin', `<div id="draft-banner" style="background:#e8f1fb;border-left:4px solid var(--teal);border-radius:0 8px 8px 0;padding:10px 14px;margin:8px 16px 8px;font-size:12px;color:var(--navy);display:flex;gap:8px;align-items:center;">
-      <span style="flex:1;">📝 Đã khôi phục bản nháp chưa gửi (lưu lúc ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}${nImg ? ' · ' + nImg + ' ảnh' : ''}).</span>
+      <span style="flex:1;">📝 Đã khôi phục bản nháp chưa gửi (lưu lúc ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}${nImg ? ' · ' + nImg + ' ảnh' : ''}).${R._hasSales && !R._selShift ? ' <b>Hãy chọn lại ca trước khi gửi.</b>' : ''}</span>
       <button class="btn btn-secondary btn-sm" style="width:auto;padding:6px 10px;" onclick="discardDraft()">Bỏ nháp</button></div>`);
   }
 }
 document.addEventListener('input', e => { if (e.target && e.target.closest && e.target.closest('#report-content')) saveDraftSoon(); }, true);
-// v2.14.1: rời màn hình (mở thư viện ảnh / chuyển app / tắt màn hình) → lưu nháp NGAY, không chờ 0,5 giây
 function _flushDraft() { clearTimeout(_draftTimer); saveDraft(); }
-document.addEventListener('visibilitychange', () => { if (document.hidden) _flushDraft(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) _flushDraft(); else onPickerReturn(); });
 window.addEventListener('pagehide', _flushDraft);
-document.addEventListener('click', e => { if (e.target && e.target.closest && e.target.closest('.img-upload-area')) _flushDraft(); }, true);
+
+// =====================================================
+// v2.15 — THEO DÕI LẦN CHỌN ẢNH (Android hay đóng trình duyệt khi mở thư viện ảnh)
+// =====================================================
+document.addEventListener('click', e => {
+  const a = e.target && e.target.closest && e.target.closest('.img-upload-area');
+  if (!a) return;
+  if (reportFormData && reportFormData._busy) { e.preventDefault(); showToast('⏳ Đang xử lý ảnh vừa chọn, chờ xong rồi chọn tiếp nhé', '', 3000); return; }
+  _flushDraft();
+  try { localStorage.setItem('dgm_picking', JSON.stringify({ key: a.getAttribute('data-key') || '', planId: currentPlanId, ts: Date.now() })); } catch (x) {}
+}, true);
+function clearPicking() { try { localStorage.removeItem('dgm_picking'); } catch (e) {} }
+/** Quay lại từ thư viện ảnh mà 15 giây không nhận được ảnh nào → ghi log (người dùng bấm huỷ, hoặc máy không trả ảnh về) */
+function onPickerReturn() {
+  let p = null; try { p = JSON.parse(localStorage.getItem('dgm_picking') || 'null'); } catch (e) {}
+  if (!p || Date.now() - p.ts > 10 * 60000) return;
+  setTimeout(() => {
+    let q = null; try { q = JSON.parse(localStorage.getItem('dgm_picking') || 'null'); } catch (e) {}
+    if (!q || q.ts !== p.ts) return;
+    clearPicking();
+    logClient('picker-empty', `${p.key}: quay lại sau ${Math.round((Date.now() - p.ts) / 1000)}s, không nhận được ảnh`);
+    const h = document.getElementById('pick-hint-' + p.key);
+    if (h) { h.style.display = 'block'; h.innerHTML = '⚠️ Chưa nhận được ảnh. Nếu bạn đã chọn ảnh: <b>bấm giữ</b> vào ảnh để chọn nhiều tấm rồi bấm <b>Chọn/Xong</b>; chọn ảnh trong mục <b>Thư viện / Gallery</b>; mỗi lần ≤ 20 ảnh.'; }
+  }, 15000);
+}
+/** Trang vừa được mở lại trong lúc đang chọn ảnh → trình duyệt đã bị Android đóng (thiếu RAM) */
+function checkPickerReload(planId) {
+  let p = null; try { p = JSON.parse(localStorage.getItem('dgm_picking') || 'null'); } catch (e) {}
+  if (!p || p.planId !== planId || Date.now() - p.ts > 10 * 60000) return;
+  clearPicking();
+  logClient('picker-reload', `${p.key}: trang bị tải lại khi đang chọn ảnh (sau ${Math.round((Date.now() - p.ts) / 1000)}s) · RAM ~${navigator.deviceMemory || '?'}GB`);
+  const c = document.getElementById('report-content');
+  if (c) c.insertAdjacentHTML('afterbegin', `<div style="background:#fff4d6;border-left:4px solid var(--yellow2);border-radius:0 8px 8px 0;padding:10px 14px;margin:8px 16px;font-size:12px;color:var(--navy);line-height:1.55;">
+    ⚠️ <b>Điện thoại vừa tự đóng trình duyệt khi bạn đang chọn ảnh</b> (máy thiếu bộ nhớ) nên các ảnh vừa chọn chưa vào được. Số liệu và ảnh trước đó vẫn còn.<br>
+    Cách khắc phục: <b>1)</b> đóng bớt app đang mở (Zalo, Facebook, Timemark…) · <b>2)</b> mỗi lần chỉ chọn khoảng <b>10 ảnh</b> · <b>3)</b> chọn ảnh trong <b>Thư viện / Gallery</b>.</div>`);
+}
 
 function renderReportForm(planId, isFirstReport, plan, hasSales) {
   const firstNote = isFirstReport ? '' :
@@ -3981,7 +4118,7 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
       ✅ Báo cáo bổ sung — Tất cả hình ảnh là <b>không bắt buộc</b> lần này
     </div>`;
 
-  // ── Khối bán hàng theo ca (v2.10) ──
+  // ── Khối bán hàng theo ca ──
   let salesHtml = '';
   if (hasSales) {
     const ps = plan.pgSales;
@@ -3991,22 +4128,24 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
     reportFormData._planShifts = (ps.shifts || []).map((s, i) => ({ no: s.no || i + 1, start: fmtTime(s.start), end: fmtTime(s.end) }));
     reportFormData._pgCount = ps.count;
     reportFormData._salesDay = toInputDate(defDay);
-    // các ca đã có người báo cáo: 'yyyy-MM-dd|no' → {name, s}
+    // các ca đã có người báo cáo: 'yyyy-MM-dd|no' → {name, code, s}
     reportFormData._reported = {};
     (plan.reports || []).forEach(r => (r.salesShifts || []).forEach(s => {
       reportFormData._reported[(s.day ? toInputDate(s.day) : toInputDate(plan.date)) + '|' + s.no] = { name: userName(r.reporter), code: String(r.reporter), s };
     }));
     const unit = reportFormData._unitLabel;
+    const g = shiftGraceMin(), gTxt = g % 60 ? g + ' phút' : (g / 60) + ' tiếng';
     salesHtml = `
     <div class="form-section">
       <div class="form-section-header purple">🛒 Bán hàng ${escHtml(plan.campaign || '')} — báo cáo theo ca</div>
       <div class="form-section-body">
         <div class="cp-info">📌 Quy ước đếm: <b>Gõ cửa</b> = số hộ đã đến gõ cửa · <b>Mở cửa nghe</b> = hộ mở cửa nghe giới thiệu (= 1 tờ rơi phát) · <b>Người mua</b> = 1 góc tờ rơi xé.<br>
-          Giá cố định <b>${fmtNum(reportFormData._unitPrice)}đ/${unit}</b> — doanh số tự tính. Chọn <b>ca sáng / ca chiều</b> bên dưới — mỗi lần gửi là báo cáo cho 1 ca.</div>
+          Giá cố định <b>${fmtNum(reportFormData._unitPrice)}đ/${unit}</b> — doanh số tự tính.<br>
+          ⏰ Mỗi ca mở báo cáo từ <b>${shiftEarlyMin()} phút trước</b> giờ bắt đầu đến <b>${gTxt} sau khi ca kết thúc</b>. Trong thời gian này có thể gửi <b>bổ sung</b> (số mới cộng thêm vào số đã báo cáo).</div>
         ${days.length > 1 ? `
         <div class="form-field">
           <label class="required">Ngày báo cáo</label>
-          <select class="form-input" id="rs-day" onchange="reportFormData._salesDay=this.value;renderSaleCards();saveDraftSoon()">
+          <select class="form-input" id="rs-day" onchange="reportFormData._salesDay=this.value;reportFormData._selShift=null;renderSaleCards();saveDraftSoon()">
             ${days.map(d => `<option value="${toInputDate(d.date)}" ${toInputDate(d.date) === reportFormData._salesDay ? 'selected' : ''}>${getDayName(d.date)}, ${fmtDate(d.date)}</option>`).join('')}
           </select>
         </div>` : ''}
@@ -4016,6 +4155,7 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
     </div>`;
   }
 
+  const blk = (key, title, req) => imageUploadBlock(key, title, req);
   document.getElementById('report-content').innerHTML = `
     <div class="spacer" style="height:8px;"></div>
     ${firstNote}
@@ -4026,13 +4166,16 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
     ${salesHtml}
 
     <div class="form-section">
-      <div class="form-section-header">📸 Hình ảnh báo cáo ${isFirstReport ? '' : '<span style="font-size:11px;font-weight:400;opacity:0.8;">(tất cả optional)</span>'}</div>
+      <div class="form-section-header">📸 Hình ảnh báo cáo ${isFirstReport ? '' : '<span style="font-size:11px;font-weight:400;opacity:0.8;">(tất cả optional)</span>'}
+        <span style="margin-left:auto;font-size:11px;font-weight:600;opacity:.9;" id="img-total">0 / ${imgTotalMax()} ảnh</span></div>
       <div class="form-section-body">
-        ${imageUploadBlock('imgLocation', '1. Hình chụp tên địa điểm sampling', isFirstReport, 10)}
-        ${imageUploadBlock('imgFood',     '2. Hình chụp món ăn (từ trên xuống)', isFirstReport && !hasSales, 20)}
-        ${imageUploadBlock('imgOverview', '3. Hình toàn cảnh (nhân viên + booth + đồng phục)', isFirstReport, 20)}
-        ${hasSales ? imageUploadBlock('imgCart', '5. Hình xe đẩy / PG bán hàng (đồng phục, xe, tờ rơi)', isFirstReport, 20) : ''}
-        ${imageUploadBlock('imgOther',    '4. Hình ảnh khác', false, 40)}
+        <div id="up-status" style="display:none;font-size:12px;border-radius:8px;padding:8px 10px;background:#e8f1fb;color:var(--navy);"></div>
+        <div style="font-size:11px;color:var(--gray2);margin-top:-4px;">Ảnh được nén ngay khi chọn và tự tải lên trong lúc bạn nhập số liệu. Máy yếu: mỗi lần chọn khoảng 10–20 ảnh.</div>
+        ${blk('imgLocation', '1. Hình chụp tên địa điểm sampling', isFirstReport)}
+        ${blk('imgFood',     '2. Hình chụp món ăn (từ trên xuống)', isFirstReport && !hasSales)}
+        ${blk('imgOverview', '3. Hình toàn cảnh (nhân viên + booth + đồng phục)', isFirstReport)}
+        ${hasSales ? blk('imgCart', '5. Hình xe đẩy / PG bán hàng (đồng phục, xe, tờ rơi)', isFirstReport) : ''}
+        ${blk('imgOther',    '4. Hình ảnh khác', false)}
       </div>
     </div>
 
@@ -4061,7 +4204,7 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
     </div>
 
     <div class="form-section">
-      <div class="form-section-header green">📦 Mẫu đã sử dụng</div>
+      <div class="form-section-header green">📦 Mẫu đã sử dụng ${isFirstReport ? '' : '<span style="font-size:11px;font-weight:400;opacity:0.85;">(chỉ nhập số dùng THÊM từ lần báo cáo trước)</span>'}</div>
       <div class="form-section-body" id="samples-used-list">
         <div class="small text-gray">Đang tải danh sách mẫu được duyệt...</div>
       </div>
@@ -4081,7 +4224,7 @@ function renderReportForm(planId, isFirstReport, plan, hasSales) {
     </div>
     <div style="padding:4px 16px 8px;">
       <button class="btn btn-primary" onclick="submitReport()">📊 Gửi báo cáo</button>
-      <div style="font-size:11px;color:var(--gray2);text-align:center;margin-top:6px;">Bấm gửi → kiểm tra bảng tóm tắt → bấm "Gửi báo cáo" lần nữa để hoàn tất.</div>
+      <div style="font-size:11px;color:var(--gray2);text-align:center;margin-top:6px;">Bấm gửi → kiểm tra bảng tóm tắt & xác nhận đúng ca → bấm gửi lần nữa để hoàn tất.</div>
     </div>
     <div class="spacer"></div>
   `;
@@ -4099,82 +4242,125 @@ function saleShiftName(s, all) {
   if (am === 1 && m >= 12 * 60) return 'Ca chiều';
   return 'Ca ' + s.no;
 }
+function saleShiftIcon(s, all) { const n = saleShiftName(s, all); return n === 'Ca chiều' ? '🌇' : n === 'Ca sáng' ? '☀️' : '🕒'; }
 
 /**
- * v2.11: chọn ca sáng / ca chiều → chỉ mở báo cáo của ca đó. Mỗi lần gửi = 1 ca.
- * Ca đã có người báo cáo (cùng ngày) thì khóa lại, chỉ xem số liệu.
+ * v2.15: khung giờ báo cáo của 1 ca → { state: 'notYet' | 'open' | 'closed', openAt, closeAt }
+ * Mở từ (giờ bắt đầu − 15') đến (giờ kết thúc + 2 tiếng). Ngày đã qua → đã khoá. Ngày sau → chưa tới.
+ */
+function shiftWin(day, s) {
+  const today = localToday(), early = shiftEarlyMin(), grace = shiftGraceMin();
+  const st = hhmmToMin(s.start), en = hhmmToMin(s.end);
+  const openAt = st == null ? '' : minToHHmm(Math.max(st - early, 0));
+  const closeAt = en == null ? '' : minToHHmm(Math.min(en + grace, 23 * 60 + 59));
+  let state = 'open';
+  if (day && day > today) state = 'notYet';
+  else if (day && day < today) state = 'closed';
+  else if (day) {
+    const now = new Date(), m = now.getHours() * 60 + now.getMinutes();
+    if (st != null && m < st - early) state = 'notYet';
+    else if (en != null && m > en + grace) state = 'closed';
+  }
+  return { state, openAt, closeAt };
+}
+/** Ca đã bắt đầu chưa (giữ để tương thích) */
+function shiftStarted(day, start) { return shiftWin(day, { start, end: '23:59' }).state !== 'notYet'; }
+
+function canEditShift(lk) {
+  if (!lk) return false;
+  const R = reportFormData;
+  if (canBypassWindow() || String((R._plan || {}).creator) === String(currentUser.code)) return true;
+  const sel = (R.salesShifts || []).find(s => s.no === R._selShift);
+  return lk.code === String(currentUser.code) && !!sel && sel.win.state === 'open';
+}
+
+/**
+ * v2.15: chọn ca → mở báo cáo ca đó. KHÔNG tự chọn ca — sales phải bấm chọn mỗi lần nhập báo cáo.
+ * Ca đã báo cáo mà còn trong khung giờ → nhập BỔ SUNG (cộng thêm).
  */
 function renderSaleCards() {
   const R = reportFormData, el = document.getElementById('rs-cards');
   if (!el) return;
-  const unit = R._unitLabel, day = R._salesDay;
+  const unit = R._unitLabel, day = R._salesDay, bypass = canBypassWindow();
   R._vals = R._vals || {};
   R.salesShifts = R._planShifts.map(s => {
     const v = R._vals[day + '|' + s.no] || {};
+    const w = shiftWin(day, s);
+    const lk = R._reported[day + '|' + s.no] || null;
+    const pick = (f, d) => (v[f] != null ? v[f] : d);
     return Object.assign({}, s, {
-      pgCount: v.pgCount != null ? v.pgCount : R._pgCount, carts: v.carts != null ? v.carts : R._pgCount,
-      knocked: v.knocked != null ? v.knocked : '', reached: v.reached != null ? v.reached : '',
-      buyers: v.buyers != null ? v.buyers : '', packs: v.packs != null ? v.packs : '',
-      locked: R._reported[day + '|' + s.no] || null, notYet: !shiftStarted(day, s.start) });
+      pgCount: pick('pgCount', lk ? '' : R._pgCount), carts: pick('carts', lk ? '' : R._pgCount),
+      knocked: pick('knocked', ''), reached: pick('reached', ''), buyers: pick('buyers', ''), packs: pick('packs', ''),
+      locked: lk, win: w, notYet: w.state === 'notYet',
+      canEnter: w.state === 'open' || (w.state === 'closed' && bypass),
+    });
   });
-  // v2.14: KHÔNG tự chọn ca chưa tới giờ. Mặc định = ca đang/đã diễn ra gần nhất chưa báo cáo; không có → ca đầu tiên.
-  const open = R.salesShifts.filter(s => !s.locked && !s.notYet);
   const cur = R.salesShifts.find(s => s.no === R._selShift);
-  if (!cur || cur.notYet || (cur.locked && open.length)) {
-    R._selShift = open.length ? open[open.length - 1].no : (R.salesShifts.find(s => !s.notYet) || R.salesShifts[0] || {}).no;
-  }
-  const sel = R.salesShifts.find(s => s.no === R._selShift);
-  const nm = s => saleShiftName(s, R.salesShifts);
-  const ico = s => nm(s) === 'Ca chiều' ? '🌇' : nm(s) === 'Ca sáng' ? '☀️' : '🕒';
-  const tabs = R.salesShifts.map(s => `<button type="button" class="${s.no === R._selShift ? 'on' : ''}" ${s.notYet ? 'disabled style="opacity:.45;"' : ''} onclick="selectSaleShift(${s.no})">
-      ${ico(s)} ${nm(s)}<br><small>${s.start}–${s.end}${s.locked ? ' · ✅ đã BC' : s.notYet ? ' · ⏳ chưa tới giờ' : ''}</small></button>`).join('');
+  if (cur && cur.notYet) R._selShift = null;
+  const sel = R.salesShifts.find(s => s.no === R._selShift) || null;
+  const all = R.salesShifts, nm = s => saleShiftName(s, all), ico = s => saleShiftIcon(s, all);
+  const sub = s => {
+    const w = s.win;
+    if (w.state === 'notYet') return `⏳ mở lúc ${w.openAt}`;
+    if (w.state === 'open') return s.locked ? `✅ đã BC · bổ sung tới ${w.closeAt}` : `🟢 mở tới ${w.closeAt}`;
+    return s.locked ? '✅ đã BC · 🔒 đã khoá' : `🔒 hết hạn ${w.closeAt}`;
+  };
+  const tabs = all.map(s => `<button type="button" class="${s.no === R._selShift ? 'on' : ''}" ${s.notYet ? 'disabled style="opacity:.45;"' : ''} onclick="selectSaleShift(${s.no})">
+      ${ico(s)} ${nm(s)} · ${s.start}–${s.end}<br><small>${sub(s)}</small></button>`).join('');
   const head = s => `<div class="sale-card-h"><span>${nm(s)} (ca ${s.no})</span><span style="font-weight:600;color:var(--gray2);">${s.start}–${s.end} · ${R._pgCount} PG duyệt</span></div>`;
-  const isMgr = currentUser.role === 'Sales Manager' || currentUser.role === 'Marketing';
+  const f = (s, i, field, label, req) => `<div class="form-field"><label class="${req ? 'required' : ''}">${label}</label>
+      <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" value="${s[field]}" oninput="onSaleInput(${i},'${field}',this.value)"></div>`;
   let card = '';
-  if (sel && sel.locked) {
-    const x = sel.locked.s;
-    const canEdit = isMgr || sel.locked.code === String(currentUser.code) || String((R._plan || {}).creator) === String(currentUser.code);
-    card = `<div class="sale-card locked">${head(sel)}
-      <div class="sale-lock">✅ Ca này đã được ${escHtml(sel.locked.name)} báo cáo</div>
-      <div style="font-size:12px;color:var(--gray);margin-top:4px;">Gõ cửa ${x.knocked == null ? '—' : fmtNum(x.knocked)} · Mở cửa ${fmtNum(x.reached)} · Mua ${fmtNum(x.buyers)} · ${fmtNum(x.packs)} ${unit}${x.editedAt ? ' · <i>đã sửa ' + escHtml(x.editedAt) + '</i>' : ''}</div>
-      ${canEdit ? `<div style="display:flex;gap:8px;margin-top:10px;">
+  if (!sel) {
+    card = `<div class="sale-card" style="background:#fff8e0;border-color:#f1cf5b;text-align:center;">
+      <div style="font-size:14px;font-weight:800;color:#7a5a00;">👆 Bấm chọn ca bạn vừa làm</div>
+      <div style="font-size:12px;color:var(--gray);margin-top:4px;">Mỗi lần gửi báo cáo phải chọn đúng <b>ca sáng</b> hoặc <b>ca chiều</b> trước khi nhập số liệu.</div></div>`;
+  } else if (sel.locked) {
+    const x = sel.locked.s, i = all.indexOf(sel);
+    const nAdd = Array.isArray(x.adds) ? x.adds.length : 0;
+    const editBtns = canEditShift(sel.locked) ? `<div style="display:flex;gap:8px;margin-top:10px;">
         <button type="button" class="btn btn-secondary btn-sm" style="flex:1;" onclick="openShiftEdit(${sel.no})">✏️ Sửa số liệu</button>
-        <button type="button" class="btn btn-outline btn-sm" style="flex:1;" onclick="removeShiftReport(${sel.no})">🗑 Xoá ca này</button></div>` : ''}
-      <div style="font-size:12px;color:var(--gray2);margin-top:8px;">${open.length ? 'Chọn ca khác ở trên để báo cáo.' : 'Không còn ca nào cần báo cáo lúc này. Bạn vẫn có thể gửi thêm ảnh / số liệu booth.'}</div>
+        <button type="button" class="btn btn-outline btn-sm" style="flex:1;" onclick="removeShiftReport(${sel.no})">🗑 Xoá ca này</button></div>` : '';
+    card = `<div class="sale-card locked">${head(sel)}
+      <div class="sale-lock">✅ Ca này đã được ${escHtml(sel.locked.name)} báo cáo${nAdd ? ' · đã bổ sung ' + nAdd + ' lần' : ''}</div>
+      <div style="font-size:12px;color:var(--gray);margin-top:4px;">Đã có: Gõ cửa ${x.knocked == null ? '—' : fmtNum(x.knocked)} · Mở cửa ${fmtNum(x.reached)} · Mua ${fmtNum(x.buyers)} · ${fmtNum(x.packs)} ${unit}${x.editedAt ? ' · <i>đã sửa ' + escHtml(x.editedAt) + '</i>' : ''}</div>
+      ${editBtns}
+      ${sel.canEnter ? `
+      <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #b9dcc6;">
+        <div style="font-size:13px;font-weight:800;color:var(--purple);">➕ Bổ sung số liệu (cộng thêm vào số đã có)</div>
+        <div style="font-size:11px;color:var(--gray2);margin:2px 0 8px;">Chỉ nhập phần <b>phát sinh thêm</b>. Còn bổ sung được tới <b>${sel.win.closeAt}</b>. Nhập sai số tổng → dùng "Sửa số liệu".</div>
+        <div class="sale-grid">
+          ${f(sel, i, 'knocked', 'Thêm hộ gõ cửa')}
+          ${f(sel, i, 'reached', 'Thêm hộ mở cửa nghe')}
+          ${f(sel, i, 'buyers', 'Thêm người mua')}
+          ${f(sel, i, 'packs', 'Thêm số ' + unit)}
+          <div class="sale-rev" id="rs-rev-${i}">Doanh số thêm: <b>${fmtCurrency((Number(sel.packs) || 0) * R._unitPrice)}</b></div>
+        </div>
+      </div>` : `<div style="font-size:12px;color:var(--gray2);margin-top:8px;">🔒 Đã quá ${sel.win.closeAt} — hết thời gian bổ sung số liệu ca này. Vẫn có thể gửi ảnh / số liệu booth cho ca khác đang mở.</div>`}
     </div>`;
-  } else if (sel && !sel.notYet) {
-    const i = R.salesShifts.indexOf(sel);
-    const f = (field, label, req) => `<div class="form-field"><label class="${req ? 'required' : ''}">${label}</label>
-      <input class="form-input" type="number" min="0" inputmode="numeric" placeholder="0" value="${sel[field]}" oninput="onSaleInput(${i},'${field}',this.value)"></div>`;
+  } else if (sel.canEnter) {
+    const i = all.indexOf(sel);
     card = `<div class="sale-card">${head(sel)}
+      ${sel.win.state === 'closed' ? '<div style="font-size:11px;color:#b07900;font-weight:700;margin-bottom:6px;">⚠️ Ca đã quá hạn báo cáo — bạn đang nhập với quyền quản lý.</div>' : ''}
       <div class="sale-grid">
-        ${f('pgCount', 'Số PG thực tế')}
-        ${f('carts', 'Số xe đẩy')}
-        ${f('knocked', 'Hộ đã gõ cửa', true)}
-        ${f('reached', 'Hộ mở cửa nghe (tờ rơi)', true)}
-        ${f('buyers', 'Người mua (góc xé)')}
-        ${f('packs', 'Số ' + unit + ' đã bán')}
+        ${f(sel, i, 'pgCount', 'Số PG thực tế')}
+        ${f(sel, i, 'carts', 'Số xe đẩy')}
+        ${f(sel, i, 'knocked', 'Hộ đã gõ cửa', true)}
+        ${f(sel, i, 'reached', 'Hộ mở cửa nghe (tờ rơi)', true)}
+        ${f(sel, i, 'buyers', 'Người mua (góc xé)')}
+        ${f(sel, i, 'packs', 'Số ' + unit + ' đã bán')}
         <div class="sale-rev" id="rs-rev-${i}">Doanh số: <b>${fmtCurrency((Number(sel.packs) || 0) * R._unitPrice)}</b></div>
       </div>
     </div>`;
   } else {
-    card = `<div class="sale-card locked" style="background:#fff8e0;border-color:#f1cf5b;"><div class="sale-lock" style="color:#7a5a00;">⏳ Chưa tới giờ ca nào trong ngày này</div>
-      <div style="font-size:12px;color:var(--gray);margin-top:4px;">Chỉ báo cáo được khi ca đã bắt đầu.</div></div>`;
+    card = `<div class="sale-card locked" style="background:#fdeaed;border-color:#f1a7b3;"><div class="sale-lock" style="color:var(--red);">🔒 Ca này đã hết hạn báo cáo lúc ${sel.win.closeAt}</div>
+      <div style="font-size:12px;color:var(--gray);margin-top:4px;">Chỉ báo cáo được từ ${sel.win.openAt} đến ${sel.win.closeAt}. Cần bổ sung, liên hệ Sales Manager.</div></div>`;
   }
-  const banner = sel && !sel.locked && !sel.notYet
-    ? `<div style="background:var(--purple);color:#fff;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:800;text-align:center;">Đang báo cáo cho: ${ico(sel)} ${nm(sel).toUpperCase()} · ${sel.start}–${sel.end}</div>` : '';
-  el.innerHTML = `<div class="form-field"><label class="required">Báo cáo cho ca</label>
-      <div class="k-seg pgs-mode" style="grid-template-columns:repeat(${R.salesShifts.length},1fr);">${tabs}</div></div>${banner}${card}`;
+  const banner = sel && sel.canEnter
+    ? `<div style="background:var(--purple);color:#fff;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:800;text-align:center;">${sel.locked ? 'Đang BỔ SUNG cho' : 'Đang báo cáo cho'}: ${ico(sel)} ${nm(sel).toUpperCase()} · ${sel.start}–${sel.end}${R._salesDay && R._salesDay !== localToday() ? '<br><small>ngày ' + fmtDate(R._salesDay) + '</small>' : ''}</div>` : '';
+  el.innerHTML = `<div class="form-field" id="rs-shift-pick"><label class="required">Chọn ca báo cáo</label>
+      <div class="k-seg pgs-mode" style="grid-template-columns:repeat(${all.length},1fr);">${tabs}</div></div>${banner}${card}`;
   updateSaleTotals();
-}
-
-/** v2.14: ca đã bắt đầu chưa (cho phép sớm 15 phút). Ngày đã qua → luôn được. */
-function shiftStarted(day, start) {
-  const today = localToday();
-  if (!day || day < today) return true;
-  if (day > today) return false;
-  const now = new Date(), m = hhmmToMin(start);
-  return m == null || now.getHours() * 60 + now.getMinutes() >= m - 15;
 }
 
 /** v2.14: sửa số liệu ca đã báo cáo */
@@ -4184,7 +4370,7 @@ function openShiftEdit(no) {
   const x = lk.s, sh = R._planShifts.find(s => s.no === no) || {};
   const f = (id, label, v) => `<div class="form-field"><label>${label}</label><input class="form-input" type="number" min="0" inputmode="numeric" id="es-${id}" value="${v == null ? '' : v}"></div>`;
   showModal(`✏️ Sửa số liệu ${saleShiftName(sh, R._planShifts)} · ${fmtDate(R._salesDay)}`, `
-    <div style="font-size:12px;color:var(--gray2);margin-bottom:10px;">Người báo cáo: <b>${escHtml(lk.name)}</b>. Sửa xong bấm Lưu — doanh số tự tính lại.</div>
+    <div style="font-size:12px;color:var(--gray2);margin-bottom:10px;">Người báo cáo: <b>${escHtml(lk.name)}</b>. Nhập <b>số TỔNG</b> đúng của cả ca, bấm Lưu — doanh số tự tính lại.</div>
     <div class="sale-grid">${f('pgCount', 'Số PG thực tế', x.pgCount)}${f('carts', 'Số xe đẩy', x.carts)}${f('knocked', 'Hộ đã gõ cửa *', x.knocked)}
       ${f('reached', 'Hộ mở cửa nghe', x.reached)}${f('buyers', 'Người mua', x.buyers)}${f('packs', 'Số ' + R._unitLabel, x.packs)}</div>`,
     [{ label: 'Đóng', cls: 'btn-secondary', action: 'closeModal()' }, { label: '💾 Lưu', cls: 'btn-primary', action: `saveShiftEdit(${no})` }]);
@@ -4208,6 +4394,7 @@ async function _shiftEditCall(no, data, remove) {
       showToast(res.message || 'Đã lưu', 'success', 4000);
       if (window._planCache) delete window._planCache[currentPlanId];
       const keep = { day: reportFormData._salesDay };
+      _flushDraft();
       await initReport(currentPlanId);
       if (reportFormData._planShifts && keep.day) { reportFormData._salesDay = keep.day; const sd = document.getElementById('rs-day'); if (sd) sd.value = keep.day; reportFormData._selShift = no; renderSaleCards(); }
     } else showToast((res && res.error) || 'Có lỗi xảy ra', 'error', 6000);
@@ -4215,27 +4402,38 @@ async function _shiftEditCall(no, data, remove) {
   finally { loading(false); }
 }
 
-function selectSaleShift(no) { reportFormData._selShift = no; renderSaleCards(); saveDraftSoon(); }
+function selectSaleShift(no) {
+  const s = (reportFormData.salesShifts || []).find(x => x.no === no);
+  if (s && s.notYet) return;
+  reportFormData._selShift = no; renderSaleCards(); saveDraftSoon();
+}
 
 function onSaleInput(i, field, val) {
   const R = reportFormData, s = R.salesShifts[i];
-  if (!s || s.locked) return;
+  if (!s || !s.canEnter) return;
   s[field] = val === '' ? '' : Math.max(Math.floor(Number(val) || 0), 0);
   const k = R._salesDay + '|' + s.no;
   (R._vals[k] = R._vals[k] || {})[field] = s[field];
   saveDraftSoon();
   if (field === 'packs') {
     const el = document.getElementById('rs-rev-' + i);
-    if (el) el.innerHTML = 'Doanh số: <b>' + fmtCurrency((Number(s.packs) || 0) * reportFormData._unitPrice) + '</b>';
+    if (el) el.innerHTML = (s.locked ? 'Doanh số thêm: <b>' : 'Doanh số: <b>') + fmtCurrency((Number(s.packs) || 0) * reportFormData._unitPrice) + '</b>';
   }
   updateSaleTotals();
 }
 
-/** Ca đã nhập số liệu (chưa khóa). */
+/** Ca đang chọn có nhập số liệu (mới hoặc bổ sung). */
 function filledSaleShifts() {
-  const R = reportFormData;   // v2.11: chỉ ca đang chọn
-  return (R.salesShifts || []).filter(s => !s.locked && s.no === R._selShift &&
+  const R = reportFormData;
+  return (R.salesShifts || []).filter(s => s.canEnter && s.no === R._selShift &&
     ((Number(s.knocked) || 0) > 0 || (Number(s.reached) || 0) > 0 || (Number(s.packs) || 0) > 0 || (Number(s.buyers) || 0) > 0));
+}
+/** Số liệu sau khi cộng (ca bổ sung: số đã có + số thêm). */
+function mergedShift(s) {
+  const n = v => Number(v) || 0;
+  if (!s.locked) return { kn: n(s.knocked), rc: n(s.reached), by: n(s.buyers), pk: n(s.packs), xe: s.carts === '' ? 0 : n(s.carts) };
+  const x = s.locked.s;
+  return { kn: n(x.knocked) + n(s.knocked), rc: n(x.reached) + n(s.reached), by: n(x.buyers) + n(s.buyers), pk: n(x.packs) + n(s.packs), xe: n(x.carts != null ? x.carts : x.pgCount) };
 }
 
 function updateSaleTotals() {
@@ -4243,22 +4441,21 @@ function updateSaleTotals() {
   if (!el) return;
   const R = reportFormData, K = campaignKpi(getCampaignByName(R._plan && R._plan.campaign));
   const list = filledSaleShifts();
-  const t = list.reduce((a, s) => {
-    a.kn += Number(s.knocked) || 0; a.rc += Number(s.reached) || 0; a.by += Number(s.buyers) || 0;
-    a.pk += Number(s.packs) || 0; a.xe += (s.carts === '' ? 0 : Number(s.carts) || 0); return a;
-  }, { kn: 0, rc: 0, by: 0, pk: 0, xe: 0 });
-  if (!list.length) { el.innerHTML = '<div class="ln"><span>Chưa nhập số liệu ca nào</span></div>'; return; }
+  if (!list.length) { el.innerHTML = `<div class="ln"><span>${R._selShift ? 'Chưa nhập số liệu ca này' : 'Chưa chọn ca'}</span></div>`; return; }
+  const t = list.map(mergedShift).reduce((a, m) => { Object.keys(m).forEach(k => a[k] += m[k]); return a; }, { kn: 0, rc: 0, by: 0, pk: 0, xe: 0 });
   const per = t.xe ? t.kn / t.xe : null, open = t.kn ? t.rc / t.kn : null, conv = t.rc ? t.by / t.rc : null;
   const tag = (v, mn, mx) => { const st = kpiStatus(v, mn, mx); return st === 'low' ? ' <span class="lo">▼ dưới KPI</span>' : (st === 'na' ? '' : ' <span class="ok">✓ đạt</span>'); };
   const errs = [];
   list.forEach(s => {
-    const kn = Number(s.knocked) || 0, rc = Number(s.reached) || 0, by = Number(s.buyers) || 0, pk = Number(s.packs) || 0;
-    if (!kn) errs.push('Chưa nhập số hộ gõ cửa');
-    if (rc > kn) errs.push('Hộ mở cửa nghe đang lớn hơn số hộ gõ cửa — kiểm tra lại');
-    if (by > rc) errs.push('Người mua đang lớn hơn số hộ mở cửa nghe — kiểm tra lại');
-    if (pk < by) errs.push(`Số ${R._unitLabel} đang ít hơn số người mua — kiểm tra lại`);
+    const m = mergedShift(s);
+    if (!m.kn) errs.push('Chưa nhập số hộ gõ cửa');
+    if (m.rc > m.kn) errs.push('Hộ mở cửa nghe đang lớn hơn số hộ gõ cửa — kiểm tra lại');
+    if (m.by > m.rc) errs.push('Người mua đang lớn hơn số hộ mở cửa nghe — kiểm tra lại');
+    if (m.pk < m.by) errs.push(`Số ${R._unitLabel} đang ít hơn số người mua — kiểm tra lại`);
   });
+  const isAdd = list.some(s => s.locked);
   el.innerHTML = `
+    ${isAdd ? '<div class="ln"><span><b>Tổng cả ca sau khi bổ sung</b></span><span></span></div>' : ''}
     <div class="ln"><span>Hộ gõ cửa / xe / ca (KPI ${K.reachMin}–${K.reachMax})</span><b>${per == null ? '—' : Math.round(per)}${tag(per, K.reachMin, K.reachMax)}</b></div>
     <div class="ln"><span>Tỷ lệ mở cửa nghe (KPI ${Math.round(K.openMin*100)}–${Math.round(K.openMax*100)}%)</span><b>${open == null ? '—' : Math.round(open * 100) + '%'}${tag(open, K.openMin, K.openMax)}</b></div>
     <div class="ln"><span>Tỷ lệ chuyển đổi mua (KPI ${Math.round(K.convMin*100)}–${Math.round(K.convMax*100)}%)</span><b>${conv == null ? '—' : Math.round(conv * 100) + '%'}${tag(conv, K.convMin, K.convMax)}</b></div>
@@ -4266,7 +4463,8 @@ function updateSaleTotals() {
     ${errs.length ? `<div style="margin-top:6px;color:#ffe140;font-weight:700;">⚠️ ${errs.join('<br>⚠️ ')}</div>` : ''}`;
 }
 
-function imageUploadBlock(key, title, required, maxAdd) {
+function imageUploadBlock(key, title, required) {
+  const maxAdd = imgMax(key);
   const reqDot = required ? '<div class="required-dot"></div>' : '';
   const optTag = !required
     ? '<span style="font-size:10px;background:var(--gray3);color:var(--gray2);border-radius:4px;padding:1px 6px;font-weight:600;">Tùy chọn</span>'
@@ -4278,14 +4476,15 @@ function imageUploadBlock(key, title, required, maxAdd) {
         <span class="small text-gray" style="margin-left:auto;" id="count-${key}">0 / ${maxAdd} ảnh</span>
       </div>
       <div class="img-preview-grid" id="preview-${key}" style="min-height:0;"></div>
-      <label id="upload-area-${key}" class="img-upload-area" style="display:block;margin-top:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;">
+      <label id="upload-area-${key}" data-key="${key}" class="img-upload-area" style="display:block;margin-top:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;">
         <span class="img-upload-icon">📷</span>
         <span class="img-upload-text" id="upload-text-${key}" style="display:block;margin-top:4px;">Chụp / Chọn từ thư viện</span>
         <span style="display:block;font-size:11px;color:var(--gray2);margin-top:2px;">Nhấn nhiều lần để thêm nhiều ảnh</span>
         <input type="file" id="file-input-${key}" accept="image/*" multiple
           style="width:0.1px;height:0.1px;opacity:0;overflow:hidden;position:absolute;"
-          onchange="handleImageSelect(event,'${key}',${maxAdd})">
+          onchange="handleImageSelect(event,'${key}')">
       </label>
+      <div id="pick-hint-${key}" style="display:none;font-size:11px;color:#7a5a00;background:#fff8e0;border-radius:6px;padding:6px 8px;margin-top:6px;line-height:1.5;"></div>
     </div>`;
 }
 
@@ -4300,8 +4499,10 @@ async function loadApprovedSamplesForReport(planId) {
     if (!approvedSamples || approvedSamples.length === 0) {
       el.innerHTML = '<div class="small text-gray">Không có thông tin mẫu được duyệt</div>'; return;
     }
+    // v2.15: báo cáo bổ sung → mặc định 0 (trước đây điền lại số được duyệt → số mẫu đã dùng bị cộng trùng)
+    const isFirst = reportFormData._isFirstReport !== false;
     const draftS = {}; (reportFormData._draftSamples || []).forEach(x => { draftS[x.ma] = x.so_luong; });
-    reportFormData.samplesUsed = approvedSamples.map(s => ({ ma: s.ma, so_luong: draftS[s.ma] != null ? Number(draftS[s.ma]) : (Number(s.so_luong) || 0) }));
+    reportFormData.samplesUsed = approvedSamples.map(s => ({ ma: s.ma, so_luong: draftS[s.ma] != null ? Number(draftS[s.ma]) : (isFirst ? (Number(s.so_luong) || 0) : 0) }));
     el.innerHTML = approvedSamples.map((s, i) => {
       const prod = masterData.products.find(p => p.ma === s.ma);
       return `<div class="product-item">
@@ -4319,96 +4520,130 @@ async function loadApprovedSamplesForReport(planId) {
   } catch(e) {}
 }
 
-const IMG_MAX = { imgLocation: 10, imgFood: 20, imgOverview: 20, imgOther: 40, imgCart: 20 };
-
-/** v2.14: vẽ 1 ảnh xem trước (dùng chung cho chọn ảnh mới & khôi phục bản nháp) */
+/** v2.15: xem trước bằng ẢNH THU NHỎ (≈5KB) — không giữ ảnh 1024px trên màn hình → tiết kiệm RAM máy yếu */
 function addImagePreview(key, entry, beforeEl) {
   const previewEl = document.getElementById(`preview-${key}`);
   if (!previewEl) return;
   const item = document.createElement('div');
   item.className = 'img-preview-item';
-  item.innerHTML = `<img src="${entry.dataUrl}" style="width:100%;height:72px;object-fit:cover;border-radius:6px;display:block;">
+  item.innerHTML = `<img src="${entry.thumb || entry.dataUrl}" style="width:100%;height:72px;object-fit:cover;border-radius:6px;display:block;">
+    <div class="img-up-dot" style="position:absolute;left:3px;bottom:3px;font-size:10px;background:rgba(0,0,0,.55);color:#fff;border-radius:6px;padding:0 4px;">${entry._url ? '☁️' : ''}</div>
     <div class="img-remove">×</div>`;
+  entry._el = item;
   item.querySelector('.img-remove').onclick = () => removeImage(key, entry, item);
   if (beforeEl) previewEl.insertBefore(item, beforeEl); else previewEl.appendChild(item);
 }
 function refreshImageCount(key) {
-  const maxAdd = IMG_MAX[key] || 40, total = reportFormData[key].length;
+  const R = reportFormData, maxAdd = imgMax(key), total = (R[key] || []).length;
   const countEl = document.getElementById(`count-${key}`);
   if (countEl) countEl.textContent = `${total} / ${maxAdd} ảnh`;
   const textEl = document.getElementById(`upload-text-${key}`);
-  if (textEl) textEl.textContent = total >= maxAdd ? `Đã đủ ${maxAdd} ảnh` : total > 0 ? `Thêm ảnh (${total}/${maxAdd})` : 'Chụp / Chọn từ thư viện';
+  const all = imgTotal(R), full = total >= maxAdd || all >= imgTotalMax();
+  if (textEl) textEl.textContent = full ? (all >= imgTotalMax() ? `Đã đủ ${imgTotalMax()} ảnh cho lần gửi này` : `Đã đủ ${maxAdd} ảnh`) : total > 0 ? `Thêm ảnh (${total}/${maxAdd})` : 'Chụp / Chọn từ thư viện';
+  const tEl = document.getElementById('img-total');
+  if (tEl) tEl.textContent = `${all} / ${imgTotalMax()} ảnh`;
+}
+function updateBusyUI() {
+  const R = reportFormData, busy = !!(R && R._busy);
+  const b = document.getElementById('btn-submit-report');
+  if (b && !b._sending) b.textContent = busy ? '⏳ Đang xử lý ảnh…' : '📊 Gửi báo cáo';
 }
 
-async function handleImageSelect(event, key, maxAdd) {
-  const files = Array.from(event.target.files || []);
-  event.target.value = '';
-  if (!files.length) return;
-  const remaining = maxAdd - reportFormData[key].length;
-  if (remaining <= 0) { showToast(`Đã đạt tối đa ${maxAdd} ảnh cho mục này`, 'error'); return; }
+async function handleImageSelect(event, key) {
+  clearPicking();
+  const input = event.target;
+  const files = Array.from(input.files || []);
+  input.value = '';
+  const R = reportFormData;
+  const hint = document.getElementById('pick-hint-' + key); if (hint) hint.style.display = 'none';
+  if (!files.length) { logClient('img-select', key + ': trình duyệt trả về 0 ảnh'); return; }
+  const maxAdd = imgMax(key);
+  const remaining = Math.min(maxAdd - R[key].length, imgTotalMax() - imgTotal(R));
+  if (remaining <= 0) { showToast(`Đã đạt tối đa ${R[key].length >= maxAdd ? maxAdd + ' ảnh cho mục này' : imgTotalMax() + ' ảnh cho 1 lần gửi'}`, 'error'); return; }
   const toProcess = files.slice(0, remaining);
   const previewEl = document.getElementById(`preview-${key}`);
   const processingEl = document.createElement('div');
   processingEl.style.cssText = 'font-size:11px;color:var(--gray2);padding:4px 0;grid-column:1/-1;';
   previewEl.appendChild(processingEl);
-  let bad = 0; const t0 = Date.now(), badInfo = [];
-  for (let i = 0; i < toProcess.length; i++) {
-    processingEl.textContent = `⏳ Đang xử lý ảnh ${i + 1}/${toProcess.length}...`;
-    const compressed = await compressImage(toProcess[i], TARGET_IMG_KB);
-    if (!compressed) { bad++; badInfo.push((toProcess[i].type || '?') + ' ' + Math.round((toProcess[i].size || 0) / 1024) + 'KB'); continue; }
-    const entry = { dataUrl: compressed.dataUrl, name: toProcess[i].name || ('anh_' + Date.now() + '.jpg'), size: compressed.size };
-    reportFormData[key].push(entry);
-    addImagePreview(key, entry, processingEl);
-    await _sleep(30);   // nhường bộ nhớ cho máy yếu
+  R._busy++; updateBusyUI();
+  let bad = 0, zero = 0; const t0 = Date.now(), badInfo = [];
+  try {
+    for (let i = 0; i < toProcess.length; i++) {
+      if (reportFormData !== R) break;   // đã rời form
+      processingEl.textContent = `⏳ Đang nén ảnh ${i + 1}/${toProcess.length}...`;
+      const file = toProcess[i];
+      const compressed = await compressImage(file, TARGET_IMG_KB);
+      if (!compressed) { bad++; if (!file.size) zero++; badInfo.push((file.type || '?') + ' ' + Math.round((file.size || 0) / 1024) + 'KB'); continue; }
+      const entry = { id: newImgId(), k: key, dataUrl: compressed.dataUrl, thumb: compressed.thumb, name: file.name || ('anh_' + Date.now() + '.jpg'), size: compressed.size };
+      R[key].push(entry);
+      addImagePreview(key, entry, processingEl);
+      idbPutImg(currentPlanId, entry);
+      if (i % 4 === 3) { refreshImageCount(key); uploadPump(R); }
+      await _sleep(15);   // nhường máy yếu
+    }
+  } finally {
+    processingEl.remove();
+    R._busy = Math.max(0, R._busy - 1); updateBusyUI();
   }
-  processingEl.remove();
   refreshImageCount(key);
-  reportFormData._imgDirty = true; saveDraftSoon();
+  saveDraftSoon();
+  uploadPump(R);
   const secs = Math.round((Date.now() - t0) / 1000);
-  if (bad || secs > 20) logClient('img-select', `${key}: chọn ${files.length}, nhận ${toProcess.length - bad}, lỗi ${bad} (${badInfo.slice(0, 5).join(', ')}), ${secs}s`);
-  if (bad) showToast(`⚠️ ${bad} ảnh không đọc được nên đã bỏ qua. Hãy chọn lại ảnh khác (định dạng JPG/PNG).`, 'error', 6000);
-  else if (files.length > remaining) showToast(`Chỉ thêm được ${remaining} ảnh nữa (tối đa ${maxAdd})`, 'error');
+  if (bad || secs > 30) logClient('img-select', `${key}: chọn ${files.length}, nhận ${toProcess.length - bad}, lỗi ${bad} (${badInfo.slice(0, 5).join(', ')}), ${secs}s`);
+  if (bad) showToast(zero
+    ? `⚠️ ${bad} ảnh không đọc được (ảnh chưa tải về máy hoặc bộ nhớ máy đầy). Hãy chọn ảnh đã lưu trong máy.`
+    : `⚠️ ${bad} ảnh không đọc được nên đã bỏ qua. Hãy chọn lại ảnh khác (định dạng JPG/PNG).`, 'error', 6000);
+  else if (files.length > remaining) showToast(`Chỉ thêm được ${remaining} ảnh nữa (tối đa ${maxAdd} ảnh/mục, ${imgTotalMax()} ảnh/lần gửi)`, 'error');
 }
 
 function removeImage(key, entry, el) {
-  const idx = reportFormData[key].indexOf(entry);
-  if (idx >= 0) reportFormData[key].splice(idx, 1);
+  const R = reportFormData, idx = R[key].indexOf(entry);
+  if (idx >= 0) R[key].splice(idx, 1);
   el.remove();
+  idbDelImg(currentPlanId, entry.id);
   refreshImageCount(key);
-  reportFormData._imgDirty = true; saveDraftSoon();
+  updateUpStatus(R);
+  saveDraftSoon();
 }
 
 /**
- * v2.14: nén ảnh tiết kiệm bộ nhớ cho máy Android cấu hình thấp
- *  • đọc ảnh bằng ObjectURL (không tạo chuỗi base64 của ảnh gốc 3–5MB như trước)
- *  • ảnh lỗi / định dạng lạ / quá 25 giây → bỏ qua ảnh đó (trước đây form bị treo ở "Đang xử lý ảnh…")
+ * v2.15: nén ảnh ngay khi chọn — cạnh dài 1024px (đủ đọc chữ Timemark), ~70KB.
+ *  • đọc ảnh 1 lần bằng ObjectURL · bắt đầu ở chất lượng 0.72 → thường chỉ 1–2 lần nén (trước đây tới 6 lần)
+ *  • tạo kèm ảnh thu nhỏ 160px để xem trước
+ *  • ảnh lỗi / 0KB / quá 30 giây → bỏ qua ảnh đó
  */
 function compressImage(file, targetKB) {
   return new Promise(resolve => {
     let done = false, url = null;
-    const finish = v => { if (done) return; done = true; clearTimeout(timer); try { if (url) URL.revokeObjectURL(url); } catch (e) {} resolve(v); };
-    const timer = setTimeout(() => finish(null), 25000);
     const img = new Image();
+    const finish = v => { if (done) return; done = true; clearTimeout(timer); img.onload = img.onerror = null; try { if (url) URL.revokeObjectURL(url); } catch (e) {} resolve(v); };
+    const timer = setTimeout(() => finish(null), 30000);
+    if (!file || !file.size) return finish(null);
     img.onerror = () => finish(null);
     img.onload = () => {
       try {
-        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-        if (!w || !h) return finish(null);
-        const maxDim = 1024;
-        if (w > maxDim || h > maxDim) { const r = Math.min(maxDim / w, maxDim / h); w = Math.round(w * r); h = Math.round(h * r); }
+        const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+        if (!w0 || !h0) return finish(null);
+        const r = Math.min(1024 / w0, 1024 / h0, 1), w = Math.round(w0 * r), h = Math.round(h0 * r);
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        img.src = '';
-        let quality = 0.85, dataUrl = '', sizeKB = 0;
-        while (true) {
-          dataUrl = canvas.toDataURL('image/jpeg', quality);
-          sizeKB = Math.round((dataUrl.length * 3) / 4 / 1024);
-          if (sizeKB <= targetKB || quality <= 0.3) break;
-          quality -= 0.1;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        img.onload = img.onerror = null; img.src = '';
+        let q = 0.72, dataUrl = '', kb = 0;
+        for (let i = 0; i < 4; i++) {
+          dataUrl = canvas.toDataURL('image/jpeg', q);
+          kb = (dataUrl.length * 3) / 4 / 1024;
+          if (kb <= targetKB * 1.15 || q <= 0.4) break;
+          q = Math.max(0.4, q - (kb > targetKB * 1.8 ? 0.2 : 0.1));
         }
-        canvas.width = canvas.height = 0;   // giải phóng bộ nhớ ngay
-        finish(dataUrl.indexOf('data:image/jpeg') === 0 ? { dataUrl, size: sizeKB } : null);
+        const s = Math.min(160 / w, 160 / h, 1), tc = document.createElement('canvas');
+        tc.width = Math.max(1, Math.round(w * s)); tc.height = Math.max(1, Math.round(h * s));
+        tc.getContext('2d').drawImage(canvas, 0, 0, tc.width, tc.height);
+        const thumb = tc.toDataURL('image/jpeg', 0.6);
+        canvas.width = canvas.height = 0; tc.width = tc.height = 0;   // giải phóng bộ nhớ ngay
+        finish(dataUrl.indexOf('data:image/jpeg') === 0 ? { dataUrl, thumb, size: Math.round(kb) } : null);
       } catch (e) { finish(null); }
     };
     try { url = URL.createObjectURL(file); img.src = url; }
@@ -4421,15 +4656,120 @@ function compressImage(file, targetKB) {
   });
 }
 
+// =====================================================
+// v2.15 — TẢI ẢNH LÊN NỀN
+// Ảnh được tải lên ngay sau khi nén (2 đợt song song, 4 ảnh/đợt). Mạng lỗi → tạm dừng 20 giây rồi thử tiếp.
+// Bấm "Gửi báo cáo" → tải nốt phần còn lại (3 đợt song song, mỗi đợt thử 3 lần) rồi lưu báo cáo.
+// =====================================================
+function _upPending(R) {
+  const out = [];
+  IMG_GROUPS.forEach(k => (R[k] || []).forEach(img => { if (!img._url && !img._up) out.push({ k, img }); }));
+  return out;
+}
+function _upDone(R) { return IMG_GROUPS.reduce((a, k) => a + (R[k] || []).filter(x => x._url).length, 0); }
+function updateUpStatus(R) {
+  if (!R || R !== reportFormData) return;
+  const total = imgTotal(R), done = _upDone(R);
+  if (R._final) loading(true, `📤 Đang tải ảnh ${done} / ${total}${R._upRetry ? ' · mạng yếu, đang thử lại…' : ''}`);
+  const el = document.getElementById('up-status');
+  if (!el) return;
+  if (!total) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  if (done >= total) { el.style.background = '#e3f4ea'; el.innerHTML = `☁️ Đã tải lên đủ <b>${done}/${total}</b> ảnh — bấm Gửi sẽ rất nhanh.`; }
+  else if (R._upPausedUntil && Date.now() < R._upPausedUntil && !R._inflight) { el.style.background = '#fff4d6'; el.innerHTML = `⚠️ Mạng yếu — đã tải ${done}/${total} ảnh. App tự thử lại; bấm Gửi sẽ tải nốt.`; }
+  else { el.style.background = '#e8f1fb'; el.innerHTML = `☁️ Đang tải ảnh lên nền: <b>${done}/${total}</b>… (vẫn nhập số liệu bình thường)`; }
+}
+async function _upSend(R, chunk, tries) {
+  chunk.forEach(q => { q.img._up = true; });
+  R._inflight++;
+  updateUpStatus(R);
+  try {
+    if (!R._tag) R._tag = Date.now().toString(36).slice(-6);
+    const images = {}, offsets = {}, refs = {};
+    chunk.forEach(q => {
+      (images[q.k] = images[q.k] || []).push({ name: q.img.name, dataUrl: q.img.dataUrl });
+      (refs[q.k] = refs[q.k] || []).push(q.img);
+    });
+    Object.keys(images).forEach(k => { offsets[k] = R._seq; R._seq += images[k].length; });
+    for (let t = 0; t < tries; t++) {
+      try {
+        const r = await api('POST', { action: 'uploadReportImages', planId: R._plan.id, userCode: currentUser.code,
+          images, offsets, tag: R._tag, folderIds: R._folderIds || null });
+        if (r && r.success && r.folders) {
+          if (r.folders.root) R._folderUrl = r.folders.root;
+          if (r.folders.folderIds && r.folders.folderIds.root) R._folderIds = Object.assign({}, R._folderIds || {}, r.folders.folderIds);
+          Object.keys(refs).forEach(k => { const got = r.folders[k] || []; refs[k].forEach((img, j) => {
+            if (got[j]) { img._url = got[j]; const d = img._el && img._el.querySelector('.img-up-dot'); if (d) d.textContent = '☁️'; } }); });
+          R._upRetry = false;
+          saveDraftSoon();
+          const miss = chunk.filter(q => !q.img._url).length;
+          if (!miss) return true;
+          R._upErr = 'máy chủ không lưu được ' + miss + ' ảnh';
+        } else R._upErr = (r && r.error) || 'Lỗi không xác định';
+      } catch (e) { R._upErr = e.message || NET_MSG; }
+      if (t < tries - 1) { R._upRetry = true; updateUpStatus(R); await _sleep(2000 * (t + 1)); }
+    }
+    return false;
+  } finally {
+    chunk.forEach(q => { q.img._up = false; });
+    R._inflight--;
+    updateUpStatus(R);
+  }
+}
+function _upChunks(R, par) {
+  const pend = _upPending(R), chunks = [];
+  for (let i = 0; i < pend.length && chunks.length < par; i += UP_CHUNK) chunks.push(pend.slice(i, i + UP_CHUNK));
+  return chunks;
+}
+/** Tải nền — gọi bất cứ lúc nào, tự bỏ qua nếu đang chạy / đang tạm dừng do mạng lỗi. */
+async function uploadPump(R) {
+  if (!R || R !== reportFormData || R._pumping || R._final || !R._plan || !R._plan.id) return;
+  if (R._upPausedUntil && Date.now() < R._upPausedUntil) return;
+  R._pumping = true;
+  try {
+    while (R === reportFormData && !R._final) {
+      const chunks = _upChunks(R, R._folderIds ? 2 : 1);   // đợt đầu đi 1 mình để lấy ID thư mục Drive
+      if (!chunks.length) break;
+      const res = await Promise.all(chunks.map(c => _upSend(R, c, 1)));
+      if (res.some(x => !x)) {
+        R._upPausedUntil = Date.now() + 20000;
+        updateUpStatus(R);
+        setTimeout(() => uploadPump(R), 20500);
+        break;
+      }
+    }
+  } finally { R._pumping = false; }
+}
+/** Lúc bấm Gửi: tải hết ảnh còn lại. Trả true nếu tất cả ảnh đã lên. */
+async function uploadAllFinal(R) {
+  R._final = true; R._upPausedUntil = 0;
+  try {
+    let guard = 0;
+    while ((R._pumping || R._inflight) && guard++ < 400) await _sleep(250);   // chờ đợt tải nền đang chạy
+    updateUpStatus(R);
+    for (let round = 0; round < 60; round++) {
+      const chunks = _upChunks(R, R._folderIds ? 3 : 1);
+      if (!chunks.length) return true;
+      const res = await Promise.all(chunks.map(c => _upSend(R, c, 3)));
+      if (res.some(x => !x)) return false;
+    }
+    return !_upPending(R).length;
+  } finally { R._final = false; }
+}
+
 async function doSubmitReport() {
   const btn = document.getElementById('btn-submit-report');
   const R = reportFormData;
   const isFirst = R._isFirstReport !== false;
   const hasSales = !!R._hasSales;
-  const actualTasters = parseInt(document.getElementById('r-tasters')?.value) || 0;
+  const actualTasters = parseInt((document.getElementById('r-tasters') || {}).value) || 0;
+  const sel = hasSales ? (R.salesShifts || []).find(s => s.no === R._selShift) : null;
+  if (hasSales && !sel) { showToast('Hãy chọn ca (sáng / chiều) trước khi gửi báo cáo', 'error'); return; }
+  if (sel && !sel.canEnter) { showToast(`Ca này đã hết hạn báo cáo lúc ${sel.win.closeAt}. Liên hệ Sales Manager nếu cần bổ sung.`, 'error', 6000); return; }
+  if (R._busy) { showToast('⏳ Đang xử lý ảnh vừa chọn, vui lòng chờ vài giây', '', 3000); return; }
   const shifts = hasSales ? filledSaleShifts().map(s => ({
-    no: s.no, day: R._salesDay || '', start: s.start, end: s.end,
-    pgCount: Number(s.pgCount) || 0, carts: s.carts === '' ? '' : Number(s.carts) || 0,
+    no: s.no, day: R._salesDay || '', start: s.start, end: s.end, add: !!s.locked,
+    pgCount: s.pgCount === '' ? '' : Number(s.pgCount) || 0, carts: s.carts === '' ? '' : Number(s.carts) || 0,
     knocked: Number(s.knocked) || 0, reached: Number(s.reached) || 0, buyers: Number(s.buyers) || 0,
     packs: Number(s.packs) || 0,
   })) : [];
@@ -4439,129 +4779,87 @@ async function doSubmitReport() {
     if (R.imgOverview.length === 0) { showToast('Bắt buộc có hình toàn cảnh', 'error'); return; }
     if (hasSales) {
       if (R.imgCart.length === 0) { showToast('Bắt buộc có hình xe đẩy / PG bán hàng', 'error'); return; }
-      if (!shifts.length && !actualTasters) { showToast('Vui lòng nhập số liệu ít nhất 1 ca bán hàng', 'error'); return; }
+      if (!shifts.length && !actualTasters) { showToast('Vui lòng nhập số liệu ca bán hàng đã chọn', 'error'); return; }
     } else {
       if (R.imgFood.length === 0) { showToast('Bắt buộc có hình món ăn', 'error'); return; }
       if (!actualTasters) { showToast('Vui lòng nhập số người thử', 'error'); return; }
     }
   } else {
-    const anyImg = ['imgLocation','imgFood','imgOverview','imgOther','imgCart'].some(k => R[k].length > 0);
+    const anyImg = IMG_GROUPS.some(k => R[k].length > 0);
     if (!anyImg && !actualTasters && !shifts.length) {
       showToast('Vui lòng nhập ít nhất số người thử, số liệu bán hàng hoặc 1 hình ảnh', 'error'); return;
     }
   }
   for (const s of shifts) {
-    if (!(s.knocked > 0)) { showToast('Vui lòng nhập số hộ đã gõ cửa', 'error'); return; }
+    const src = (R.salesShifts || []).find(x => x.no === s.no) || {};
+    const m = mergedShift(src);
+    if (!s.add && !(s.knocked > 0)) { showToast('Vui lòng nhập số hộ đã gõ cửa', 'error'); return; }
     const warn = [];
-    if (s.reached > s.knocked) warn.push('• Hộ mở cửa nghe (' + s.reached + ') lớn hơn số hộ gõ cửa (' + s.knocked + ')');
-    if (s.buyers > s.reached)  warn.push('• Người mua (' + s.buyers + ') lớn hơn số hộ mở cửa nghe (' + s.reached + ')');
-    if (s.packs < s.buyers)    warn.push('• Số ' + R._unitLabel + ' (' + s.packs + ') ít hơn số người mua (' + s.buyers + ')');
-    if (warn.length && !confirm('Số liệu có vẻ chưa hợp lý:\n' + warn.join('\n') + '\n\nVẫn gửi báo cáo?')) return;
+    if (m.rc > m.kn) warn.push('• Hộ mở cửa nghe (' + m.rc + ') lớn hơn số hộ gõ cửa (' + m.kn + ')');
+    if (m.by > m.rc) warn.push('• Người mua (' + m.by + ') lớn hơn số hộ mở cửa nghe (' + m.rc + ')');
+    if (m.pk < m.by) warn.push('• Số ' + R._unitLabel + ' (' + m.pk + ') ít hơn số người mua (' + m.by + ')');
+    if (warn.length && !confirm('Số liệu ' + (s.add ? 'sau khi bổ sung ' : '') + 'có vẻ chưa hợp lý:\n' + warn.join('\n') + '\n\nVẫn gửi báo cáo?')) return;
   }
 
-  btn.disabled = true;
+  btn.disabled = true; btn._sending = true;
   btn.textContent = '⏳ Đang gửi...';
-
-  const groups = ['imgLocation','imgFood','imgOverview','imgOther','imgCart'];
-  const totalImgCount = groups.reduce((s, k) => s + R[k].length, 0);
-  let imgFolderUrl = '';
-  const urls = { imgLocation: [], imgFood: [], imgOverview: [], imgOther: [], imgCart: [] };
-
-  if (totalImgCount > 0) {
-    // v2.12: tải ảnh theo đợt 4 ảnh/lần.
-    //  • Đợt đầu gửi riêng → server trả ID thư mục Drive. Các đợt sau gửi SONG SONG 3 đợt/lúc, ghi thẳng vào thư mục.
-    //  • Mỗi đợt thử lại tối đa 3 lần. Ảnh đã tải xong được nhớ lại → bấm Gửi lại không tải trùng.
-    R._tag = R._tag || Date.now().toString(36).slice(-6);
-    const queue = [];
-    groups.forEach(k => R[k].forEach((img, idx) => { if (!img._url) queue.push({ k, idx, img }); }));
-    const CH = 4, PAR = 3;
-    const chunks = [];
-    for (let i = 0; i < queue.length; i += CH) chunks.push(queue.slice(i, i + CH));
-    const doneCount = () => groups.reduce((a, k) => a + R[k].filter(x => x._url).length, 0);
-    const progress = (extra) => loading(true, `📤 Đang tải ảnh ${doneCount()} / ${totalImgCount}${extra || ''}`);
-    let lastErr = '';
-
-    const sendChunk = async chunk => {
-      const images = {}, offsets = {}, refs = {};
-      chunk.forEach(q => {
-        (images[q.k] = images[q.k] || []).push({ name: q.img.name, dataUrl: q.img.dataUrl });
-        (refs[q.k] = refs[q.k] || []).push(q.img);
-        if (offsets[q.k] == null) offsets[q.k] = q.idx;
-      });
-      for (let t = 0; t < 3; t++) {
-        try {
-          const r = await api('POST', { action: 'uploadReportImages', planId: currentPlanId, userCode: currentUser.code,
-            images, offsets, tag: R._tag, folderIds: R._folderIds || null });
-          if (r && r.success && r.folders) {
-            if (r.folders.root) R._folderUrl = r.folders.root;
-            if (r.folders.folderIds && r.folders.folderIds.root) R._folderIds = Object.assign({}, R._folderIds || {}, r.folders.folderIds);
-            Object.keys(refs).forEach(k => { const got = r.folders[k] || []; refs[k].forEach((img, j) => { if (got[j]) img._url = got[j]; }); });
-            R._imgDirty = true; saveDraftSoon();
-            progress();
-            return true;
-          }
-          lastErr = (r && r.error) || 'Lỗi không xác định';
-        } catch (e) { lastErr = e.message || NET_MSG; }
-        if (t < 2) { progress(` · mạng yếu, đang thử lại…`); await _sleep(2000 * (t + 1)); }
-      }
-      return false;
-    };
-
-    progress();
-    let allOk = true;
-    if (chunks.length) {
-      // đợt đầu: lấy ID thư mục (nếu đã có từ lần gửi trước thì bỏ qua bước này)
-      if (!R._folderIds) allOk = await sendChunk(chunks.shift());
-      // các đợt còn lại: 3 đợt song song
-      let next = 0;
-      const worker = async () => { while (allOk && next < chunks.length) { const c = chunks[next++]; if (!(await sendChunk(c))) allOk = false; } };
-      if (allOk) await Promise.all(Array.from({ length: Math.min(PAR, chunks.length) }, worker));
-    }
-    if (!allOk || doneCount() < totalImgCount) {
-      loading(false); btn.disabled = false; btn.textContent = '📊 Gửi báo cáo';
-      showToast(`❌ Mới tải được ${doneCount()}/${totalImgCount} ảnh${lastErr ? ' (' + lastErr + ')' : ''}.\nẢnh đã tải được giữ lại — bấm "Gửi báo cáo" lần nữa để tải tiếp.`, 'error', 9000);
-      return;
-    }
-    imgFolderUrl = R._folderUrl || '';
-    groups.forEach(k => { urls[k] = R[k].filter(x => x._url).map(x => x._url); });
-  }
-
-  loading(true, '📊 Đang lưu báo cáo...');
-  const data = {
-    actualTasters: actualTasters,
-    actualSales:   parseFloat(document.getElementById('r-sales')?.value) || 0,
-    feedback:      document.getElementById('r-feedback')?.value?.trim(),
-    notes:         document.getElementById('r-notes')?.value?.trim(),
-    samplesUsed:   R.samplesUsed,
-    markCompleted: R.markCompleted,
-    salesShifts:   hasSales ? shifts : [],
-    imgLocation:   urls.imgLocation,
-    imgFood:       urls.imgFood,
-    imgOverview:   urls.imgOverview,
-    imgOther:      urls.imgOther,
-    imgCart:       urls.imgCart,
-    imgFolderUrl:  imgFolderUrl,
-  };
   try {
+    const totalImgCount = imgTotal(R);
+    let imgFolderUrl = '';
+    const urls = { imgLocation: [], imgFood: [], imgOverview: [], imgOther: [], imgCart: [] };
+    if (totalImgCount > 0) {
+      const ok = await uploadAllFinal(R);
+      const done = _upDone(R);
+      if (!ok || done < totalImgCount) {
+        loading(false);
+        showToast(`❌ Mới tải được ${done}/${totalImgCount} ảnh${R._upErr ? ' (' + R._upErr + ')' : ''}.\nẢnh đã tải được giữ lại — bấm "Gửi báo cáo" lần nữa để tải tiếp.`, 'error', 9000);
+        return;
+      }
+      imgFolderUrl = R._folderUrl || '';
+      IMG_GROUPS.forEach(k => { urls[k] = R[k].filter(x => x._url).map(x => x._url); });
+    }
+
+    loading(true, '📊 Đang lưu báo cáo...');
+    const data = {
+      actualTasters: actualTasters,
+      actualSales:   parseFloat((document.getElementById('r-sales') || {}).value) || 0,
+      feedback:      ((document.getElementById('r-feedback') || {}).value || '').trim(),
+      notes:         ((document.getElementById('r-notes') || {}).value || '').trim(),
+      samplesUsed:   R.samplesUsed,
+      markCompleted: R.markCompleted,
+      salesShifts:   hasSales ? shifts : [],
+      selShift:      sel ? { day: R._salesDay || '', no: sel.no } : null,
+      imgLocation:   urls.imgLocation,
+      imgFood:       urls.imgFood,
+      imgOverview:   urls.imgOverview,
+      imgOther:      urls.imgOther,
+      imgCart:       urls.imgCart,
+      imgFolderUrl:  imgFolderUrl,
+      appVersion:    APP_VERSION,
+    };
+    // mã gửi = theo nội dung → mạng rớt app gửi lại cùng nội dung thì máy chủ nhận ra, không ghi trùng / không cộng trùng
+    data.subId = currentUser.code + '-' + _hash(currentPlanId + JSON.stringify(data));
     let res = await api('POST', { action:'submitReport', planId: currentPlanId, data, userCode: currentUser.code });
     if (!res.success && res.requiresReason) {
       const reason = prompt(res.error + '\n\nNhập lý do vượt mẫu:');
       if (reason) {
         data.overuseReason = reason;
+        data.subId = currentUser.code + '-' + _hash(currentPlanId + JSON.stringify(data));
         res = await api('POST', { action:'submitReport', planId: currentPlanId, data, userCode: currentUser.code });
       }
     }
     if (res.success) {
       if (window._planCache) delete window._planCache[currentPlanId];
       clearDraft(currentPlanId);
-      showToast((res.message && res.message.indexOf('✅') === 0 ? res.message : 'Báo cáo đã được ghi nhận! 🎉'), 'success', 5000);
+      reportFormData = { imgLocation:[], imgFood:[], imgOverview:[], imgOther:[], imgCart:[] };   // giải phóng ảnh khỏi bộ nhớ
+      showToast((res.message && res.message.indexOf('✅') === 0 ? res.message : 'Báo cáo đã được ghi nhận! 🎉'), 'success', 6000);
       showScreen('plans');
       loadMyPlans();
     } else {
-      showToast(res.error || 'Có lỗi xảy ra', 'error', 6000);
+      showToast(res.error || 'Có lỗi xảy ra', 'error', 7000);
     }
-  } catch(e) { showToast('Lỗi kết nối', 'error'); }
-  finally { btn.disabled = false; btn.textContent = '📊 Gửi báo cáo'; loading(false); }
+  } catch(e) { showToast((e && e.message) || 'Lỗi kết nối', 'error', 6000); }
+  finally { btn.disabled = false; btn._sending = false; btn.textContent = '📊 Gửi báo cáo'; loading(false); }
 }
 
 // =====================================================
@@ -6527,53 +6825,92 @@ document.addEventListener('change', e => { if (e.target && e.target.type === 'fi
 function submitReport() {
   if (Date.now() - _lastLayoutJump < 800) return;   // cú chạm "lọt" do màn hình vừa co giãn → bỏ qua
   const R = reportFormData, v = id => (document.getElementById(id) || {}).value || '';
+  if (R._busy) { showToast('⏳ Đang xử lý ảnh vừa chọn, vui lòng chờ vài giây', '', 3000); return; }
+  // v2.15: bắt buộc chọn ca trước
+  let s = null;
+  if (R._hasSales) {
+    s = (R.salesShifts || []).find(x => x.no === R._selShift) || null;
+    if (!s) {
+      showToast('Hãy chọn ca (sáng / chiều) trước khi gửi báo cáo', 'error', 4000);
+      const pk = document.getElementById('rs-shift-pick');
+      if (pk) { pk.scrollIntoView({ behavior: 'smooth', block: 'center' }); pk.style.outline = '3px solid var(--red)'; setTimeout(() => { pk.style.outline = ''; }, 2500); }
+      return;
+    }
+    if (!s.canEnter) { showToast(`Ca này đã hết hạn báo cáo lúc ${s.win.closeAt}. Liên hệ Sales Manager nếu cần bổ sung.`, 'error', 6000); return; }
+  }
   const miss = '<span style="color:#c96a00;font-weight:700;">chưa nhập</span>';
   const row = (k, val) => `<div class="detail-row"><span class="detail-key">${k}</span><span class="detail-value">${val}</span></div>`;
   const img = k => (R[k] || []).length;
-  let body = '<div style="font-size:12px;color:var(--gray2);margin-bottom:8px;">Kiểm tra lại trước khi gửi. Muốn bổ sung thì bấm "Quay lại sửa".</div>';
+  let body = '';
+  let sendLabel = '📊 Gửi báo cáo';
   if (R._hasSales) {
-    const s = (R.salesShifts || []).find(x => x.no === R._selShift) || {};
-    const name = s.start ? saleShiftName(s, R.salesShifts) + ' (' + s.start + '–' + s.end + ')' : '—';
-    body += row('Ca báo cáo', s.locked ? name + ' — <i>đã có người báo cáo (chỉ gửi ảnh/booth)</i>' : `<span style="background:var(--purple);color:#fff;border-radius:6px;padding:2px 8px;">${name}</span>`);
-    if (!s.locked) {
+    const all = R.salesShifts, nm = saleShiftName(s, all).toUpperCase(), ico = saleShiftIcon(s, all);
+    const isAdd = !!s.locked, filled = filledSaleShifts().length > 0;
+    body += `<div style="background:var(--purple);color:#fff;border-radius:12px;padding:14px 12px;text-align:center;margin-bottom:10px;">
+      <div style="font-size:12px;opacity:.85;">${isAdd ? 'BẠN ĐANG GỬI BỔ SUNG CHO' : 'BẠN ĐANG GỬI BÁO CÁO CHO'}</div>
+      <div style="font-size:22px;font-weight:900;line-height:1.25;margin-top:2px;">${ico} ${nm}</div>
+      <div style="font-size:13px;font-weight:700;">${s.start}–${s.end} · ${getDayName(R._salesDay)}, ${fmtDate(R._salesDay)}</div></div>`;
+    body += `<label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;padding:10px 12px;border:2px solid var(--purple);border-radius:10px;background:#fbf7ff;font-size:13px;font-weight:700;color:var(--navy);cursor:pointer;">
+      <input type="checkbox" id="cf-shift" style="width:22px;height:22px;flex-shrink:0;accent-color:#7a3fa8;" onchange="var b=document.getElementById('cf-send');if(b)b.disabled=!this.checked;">
+      <span>Tôi xác nhận số liệu và ảnh này là của <span style="color:var(--purple);">${nm}</span> (${s.start}–${s.end}) ngày ${fmtDate(R._salesDay)}.</span></label>`;
+    if (isAdd && filled) {
+      const x = s.locked.s, m = mergedShift(s);
+      body += row('Đã báo cáo trước', `${fmtNum(x.knocked)} gõ cửa · ${fmtNum(x.reached)} mở cửa · ${fmtNum(x.buyers)} mua · ${fmtNum(x.packs)} ${R._unitLabel}`);
+      body += row('➕ Cộng thêm', `<b>${fmtNum(Number(s.knocked) || 0)} gõ cửa · ${fmtNum(Number(s.reached) || 0)} mở cửa · ${fmtNum(Number(s.buyers) || 0)} mua · ${fmtNum(Number(s.packs) || 0)} ${R._unitLabel}</b>`);
+      body += row('= Tổng ca sau bổ sung', `${fmtNum(m.kn)} · ${fmtNum(m.rc)} · ${fmtNum(m.by)} · ${fmtNum(m.pk)} ${R._unitLabel} · ${fmtCurrency(m.pk * R._unitPrice)}`);
+    } else if (isAdd) {
+      body += row('Số liệu ca', '<i>không bổ sung số — chỉ gửi ảnh / booth</i>');
+    } else {
       body += row('Hộ gõ cửa · mở cửa', (s.knocked === '' ? miss : fmtNum(s.knocked)) + ' · ' + (s.reached === '' ? miss : fmtNum(s.reached)));
       body += row('Người mua · số ' + R._unitLabel, (s.buyers === '' ? miss : fmtNum(s.buyers)) + ' · ' + (s.packs === '' ? miss : fmtNum(s.packs)));
       body += row('Doanh số bán hàng', fmtCurrency((Number(s.packs) || 0) * R._unitPrice));
     }
+    sendLabel = `✅ Đúng ${saleShiftName(s, all)} — Gửi`;
   }
   body += row(R._hasSales ? 'Người thử tại booth' : 'Số người thử', v('r-tasters') ? fmtNum(v('r-tasters')) : miss);
   body += row(R._hasSales ? 'Doanh số tại booth' : 'Doanh số', v('r-sales') ? fmtCurrency(v('r-sales')) : miss);
   body += row('Phản hồi khách hàng', v('r-feedback').trim() ? '✅ Có' : miss);
   const imgs = [['imgLocation', 'Tên địa điểm'], ['imgFood', 'Món ăn'], ['imgOverview', 'Toàn cảnh']]
     .concat(R._hasSales ? [['imgCart', 'Xe đẩy']] : []).concat([['imgOther', 'Khác']]);
-  body += row('Ảnh', imgs.map(([k, l]) => `${l}: <b>${img(k)}</b>`).join(' · '));
+  const nUp = _upDone(R), nAll = imgTotal(R);
+  body += row('Ảnh', imgs.map(([k, l]) => `${l}: <b>${img(k)}</b>`).join(' · ') + (nAll ? `<br><small>☁️ đã tải lên trước ${nUp}/${nAll}</small>` : ''));
   const used = (R.samplesUsed || []).reduce((a, x) => a + (Number(x.so_luong) || 0), 0);
   body += row('Mẫu đã dùng', fmtNum(used));
   body += row('Đánh dấu hoàn thành', R.markCompleted ? '✅ Có' : 'Không');
   showModal('📋 Xác nhận gửi báo cáo', body, [
-    { label: '✏️ Quay lại sửa', cls: 'btn-secondary', action: 'closeModal()' },
-    { label: '📊 Gửi báo cáo', cls: 'btn-primary', action: 'closeModal();doSubmitReport()' },
+    { label: R._hasSales ? '↩ Sai ca / sửa lại' : '✏️ Quay lại sửa', cls: 'btn-secondary', action: 'closeModal()' },
+    { label: sendLabel, cls: 'btn-primary', action: 'closeModal();doSubmitReport()' },
   ]);
+  const btns = document.querySelectorAll('#modal-content .modal-footer .btn');
+  const send = btns[btns.length - 1];
+  if (send && R._hasSales) { send.id = 'cf-send'; send.disabled = true; }
 }
 
 (function init() {
   _onViewport();
   // v2.12.1: hiện số phiên bản ở màn hình đăng nhập, trang chủ và thanh bên → nhìn là biết máy đang chạy bản nào
   document.querySelectorAll('.app-ver').forEach(el => { el.textContent = 'Phiên bản ' + APP_VERSION; });
-  const storedVersion = localStorage.getItem('dgm_app_version');
+  let storedVersion = null;
+  try { storedVersion = localStorage.getItem('dgm_app_version'); } catch (e) {}
   if (storedVersion && storedVersion !== APP_VERSION) {
-    localStorage.setItem('dgm_app_version', APP_VERSION);
+    try { localStorage.setItem('dgm_app_version', APP_VERSION); } catch (e) {}
     try { Object.keys(sessionStorage).filter(k => k.startsWith('dgm_masterdata')).forEach(k => sessionStorage.removeItem(k)); } catch (e) {}
     if ('caches' in window) caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
     window.location.reload();
     return;
   }
-  localStorage.setItem('dgm_app_version', APP_VERSION);
+  try { localStorage.setItem('dgm_app_version', APP_VERSION); } catch (e) {}
   document.addEventListener('touchstart', function(){}, {passive:true});
   document.documentElement.style.overscrollBehavior = 'none';
 
-  const saved = sessionStorage.getItem('dgm_user');
+  let saved = sessionStorage.getItem('dgm_user');
   const savedScreen = sessionStorage.getItem('dgm_screen');
+  // v2.15: Android máy yếu tự đóng tab khi mở thư viện ảnh / Timemark → mở lại mất phiên đăng nhập.
+  // Giữ đăng nhập trong localStorage 7 ngày → mở lại là quay về đúng form báo cáo + bản nháp.
+  if (!saved) {
+    try { const k = JSON.parse(localStorage.getItem('dgm_user_keep') || 'null');
+      if (k && k.u && Date.now() - k.ts < 7 * 86400000) { saved = JSON.stringify(k.u); sessionStorage.setItem('dgm_user', saved); } } catch (e) {}
+  }
   if (saved) {
     try {
       currentUser = JSON.parse(saved);
@@ -6593,7 +6930,7 @@ function submitReport() {
           showScreen('home');
         }
       });
-    } catch(e) { sessionStorage.removeItem('dgm_user'); }
+    } catch(e) { sessionStorage.removeItem('dgm_user'); try { localStorage.removeItem('dgm_user_keep'); } catch (x) {} }
   }
   if (!saved) api('GET', { action:'getBootstrap', channel: '', region: '' }).catch(() => {});
 })();
