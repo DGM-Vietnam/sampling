@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="version" content="2.15.0">
+<meta name="version" content="2.16.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1588,7 +1588,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
     document.body.appendChild(d);
   });
   try {
-    var body = JSON.stringify({ action: 'logClient', kind: 'old-browser', message: 'Trình duyệt không hỗ trợ cú pháp mới', userCode: '-', appVersion: '2.15.0', screen: '', ua: navigator.userAgent });
+    var body = JSON.stringify({ action: 'logClient', kind: 'old-browser', message: 'Trình duyệt không hỗ trợ cú pháp mới', userCode: '-', appVersion: '2.16.0', screen: '', ua: navigator.userAgent });
     new Image().src = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec?payload=' + encodeURIComponent(body);
   } catch (e) {}
 })();
@@ -1597,7 +1597,7 @@ body.kpi-role #screen-dashboard .screen-content { background: #f0f2f5; padding-b
 // =====================================================
 // CONSTANTS & STATE
 // =====================================================
-const APP_VERSION = '2.15.0';
+const APP_VERSION = '2.16.0';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrVWM_9iKBc8aXf7IEgXJOgoZI0jct15-seV7w3I5YB34DBQiuprai8F_odNfcSYWwsg/exec';
 const TARGET_IMG_KB = 70;  // v2.12: nén ~70KB/ảnh (cạnh dài 1024px) — đủ đọc chữ Timemark, tải nhanh hơn
 const PGS_MIN_HOURS = 3;   // v2.9: PG bán hàng — ca dưới 3h vẫn tính 3h
@@ -5528,7 +5528,7 @@ async function doInlineApprove(planId) {
 // =====================================================
 let mgrTab = 'kpi';
 let kpiData = null;
-let kpiState = { period: '', ch: 'all', vg: 'all', cp: 'all', mx: 'ht', tb: 'sal', staffAll: false, cl: 'pk' };
+let kpiState = { period: '', ch: 'all', vg: 'all', cp: 'all', mx: 'ht', tb: 'sal', staffAll: false, cl: 'pk', bs: 'th' };   // v2.16: bs = cơ sở số liệu 'th' (đã thực hiện) | 'duyet' (cam kết)
 const KPI_ACTIVE  = ['da_duyet', 'hoan_thanh'];
 const KPI_VOID    = ['tu_choi', 'da_huy'];
 const KPI_CH      = ['MT', 'GT'];
@@ -5681,16 +5681,82 @@ function kpiSegments(list) {
 }
 
 /** Dựng bảng theo kênh · vùng (dùng chung). lineFn(label, agg, cls) → <tr> */
-function kpiSegmentRows(list, lineFn) {
+function kpiSegmentRows(list, lineFn, aggFn) {
+  aggFn = aggFn || kpiAgg;   // v2.16: dùng chung cho danh sách kế hoạch hoặc danh sách ngày (chi phí theo ngày)
   const segs = kpiSegments(list);
   let body = '';
   KPI_CH.concat([...new Set(segs.map(s => s.ch))].filter(c => !KPI_CH.includes(c))).forEach(ch => {
     const chSegs = segs.filter(s => s.ch === ch); if (!chSegs.length) return;
-    if (chSegs.length > 1) body += lineFn(`<b>${ch}</b>`, kpiAgg(list.filter(p => p.ch === ch)), 'k-sub');
-    chSegs.forEach(s => { body += lineFn(chSegs.length > 1 ? `<span class="k-ind">${s.vg}</span>` : `<b>${ch}</b> · ${s.vg}`, kpiAgg(list.filter(p => p.ch === s.ch && p.vg === s.vg))); });
+    if (chSegs.length > 1) body += lineFn(`<b>${ch}</b>`, aggFn(list.filter(p => p.ch === ch)), 'k-sub', { ch, vg: null });
+    chSegs.forEach(s => { body += lineFn(chSegs.length > 1 ? `<span class="k-ind">${s.vg}</span>` : `<b>${ch}</b> · ${s.vg}`, aggFn(list.filter(p => p.ch === s.ch && p.vg === s.vg)), '', { ch: s.ch, vg: s.vg }); });
   });
-  return body + lineFn('<b>Tổng</b>', kpiAgg(list), 'k-total');
+  return body + lineFn('<b>Tổng</b>', aggFn(list), 'k-total', { ch: null, vg: null });
 }
+
+// =====================================================
+// v2.16 — CHI PHÍ THEO NGÀY: "Đã thực hiện" (mặc định) · "Đã duyệt (cam kết)"
+//  • Buổi = 1 ngày của 1 kế hoạch. Chi phí cam kết của kế hoạch chia đều cho số ngày trong lịch.
+//  • Ngày ĐÃ THỰC HIỆN = ngày có báo cáo bán hàng theo ca; kế hoạch không có số liệu ca: đã hoàn thành → đủ các ngày,
+//    đã duyệt & đã có báo cáo → các ngày đã qua (giống bảng "Kế hoạch & thực hiện").
+//  • Chi phí ngày đã thực hiện: PG bán hàng = chi phí THỰC TẾ của các ca (đơn giá ca × số PG thực tế báo cáo);
+//    PG sampling, địa điểm, mẫu thử, quà = phần chia đều theo ngày.
+//  • Tháng tính theo NGÀY thực hiện (kế hoạch nhiều ngày qua 2 tháng được chia đúng tháng).
+// =====================================================
+let _kxCache = null;
+function kpiExecIndex() {
+  if (_kxCache && _kxCache.src === kpiData) return _kxCache;
+  const today = localToday(), sh = {}, ex = {};
+  (kpiData.shifts || []).forEach(s => {
+    const o = sh[s.id] || (sh[s.id] = { days: {}, co: {}, pgc: {} });
+    o.days[s.d] = 1; o.co[s.d] = (o.co[s.d] || 0) + (Number(s.co) || 0); o.pgc[s.d] = (o.pgc[s.d] || 0) + (Number(s.pg) || 0);
+  });
+  (kpiData.plans || []).forEach(p => {
+    if (!KPI_ACTIVE.includes(p.st)) return;
+    const set = {};
+    if (sh[p.id]) Object.keys(sh[p.id].days).forEach(d => { set[d] = 1; });
+    else if (p.st === 'hoan_thanh' || p.rp > 0) for (let i = 0; i < Math.max(p.nd || 1, 1); i++) { const d = addDays(p.d, i); if (p.st === 'hoan_thanh' || d <= today) set[d] = 1; }
+    ex[p.id] = set;
+  });
+  _kxCache = { src: kpiData, sh, ex };
+  return _kxCache;
+}
+/** Số buổi đã thực hiện của 1 kế hoạch (toàn kế hoạch). */
+function kpiExecDaysN(p) { return Object.keys(kpiExecIndex().ex[p.id] || {}).length; }
+/** Danh sách NGÀY (buổi) của các kế hoạch đã duyệt/hoàn thành trong khoảng tháng [from, to], theo bộ lọc. */
+function kpiCostDays(from, to) {
+  const X = kpiExecIndex(), out = [];
+  (kpiData.plans || []).forEach(p => {
+    if (!KPI_ACTIVE.includes(p.st) || !kpiInScope(p)) return;
+    const nd = Math.max(p.nd || 1, 1), f = v => (Number(v) || 0) / nd;
+    const base = { pg: f(p.pg), ps: f(p.ps), lc: f(p.lc), sc: f(p.sc), gf: f(p.gf), pgd: f(p.pgd), psd: f(p.psd), sq: f(p.sq) };
+    const planDays = {}; for (let i = 0; i < nd; i++) planDays[addDays(p.d, i)] = 1;
+    const exs = X.ex[p.id] || {}, shp = X.sh[p.id];
+    const all = Object.assign({}, planDays, exs);
+    Object.keys(all).forEach(d => {
+      const m = d.substring(0, 7); if (m < from || m > to) return;
+      const e = { id: p.id, d, m, ch: p.ch, vg: p.vg, cm: !!planDays[d], ex: !!exs[d] };
+      e.c = e.cm ? base : null;
+      if (e.ex) e.x = Object.assign({}, base, shp ? { ps: shp.co[d] || 0, psd: shp.pgc[d] || 0 } : {});
+      out.push(e);
+    });
+  });
+  return out;
+}
+function kpiCostAgg(days) {
+  const z = () => ({ pg: 0, ps: 0, lc: 0, sc: 0, gf: 0, tc: 0, pgd: 0, psd: 0, sq: 0 });
+  const add = (t, v) => { ['pg', 'ps', 'lc', 'sc', 'gf', 'pgd', 'psd', 'sq'].forEach(k => { t[k] += v[k] || 0; }); t.tc += (v.pg || 0) + (v.ps || 0) + (v.lc || 0) + (v.sc || 0) + (v.gf || 0); };
+  const a = { dTh: 0, dDuyet: 0, x: z(), c: z(), rest: z(), restN: 0 };
+  days.forEach(e => {
+    if (e.cm) { a.dDuyet++; add(a.c, e.c); if (!e.ex) { a.restN++; add(a.rest, e.c); } }
+    if (e.ex) { a.dTh++; add(a.x, e.x); }
+  });
+  a.cpbTh = a.dTh ? a.x.tc / a.dTh : null;
+  a.cpbDuyet = a.dDuyet ? a.c.tc / a.dDuyet : null;
+  return a;
+}
+function kpiIsTh() { return kpiState.bs !== 'duyet'; }
+/** Khoảng tháng dùng cho chi phí: đã thực hiện → tới tháng hiện tại; cam kết → cả kỳ (kể cả tháng sắp tới của campaign). */
+function kpiCostRange(P) { return { from: P.from, to: kpiIsTh() ? P.to : (P.toFull || P.to) }; }
 
 function renderKpi() {
   const el = document.getElementById('dash-content'); if (!el || !kpiData) return;
@@ -5699,6 +5765,8 @@ function renderKpi() {
   const prevOk = !P.noPrev && P.prev.from >= (kpiData.from || '0000-00');
   const prev = prevOk ? kpiFilter(P.prev.from, P.prev.to) : null;
   const A = kpiAgg(cur), B = prev ? kpiAgg(prev) : null;
+  const CR = kpiCostRange(P);
+  const DA = kpiCostAgg(kpiCostDays(CR.from, CR.to)), DB = prev ? kpiCostAgg(kpiCostDays(P.prev.from, P.prev.to)) : null;
 
   const vgPresent = KPI_VG.filter(v => (kpiData.plans || []).some(p => p.vg === v));
   const cpPresent = [...new Set((kpiData.plans || []).map(p => p.cp).filter(Boolean))].sort();
@@ -5709,25 +5777,35 @@ function renderKpi() {
       ${cpPresent.map(c => `<option value="${escHtml(c)}" ${kpiState.cp === c ? 'selected' : ''}>${escHtml(c)}</option>`).join('')}
     </select>` : '';
 
+  // v2.16: lọc nhanh thời gian (cả tháng này / toàn campaign) + cơ sở số liệu (đã thực hiện / đã duyệt)
+  const salesCps = (masterData.campaigns || []).filter(c => c.requiresPgSales && cpPresent.includes(c.name)).map(c => c.name);
+  const cpForFull = (kpiState.cp !== 'all' && kpiState.cp !== '__none') ? kpiState.cp : (salesCps[0] || '');
+  const fullCp = cpForFull ? kpiCampaignPeriod(cpForFull) : '';
+  const quick = `<div class="k-seg">
+      <button class="${kpiState.period === 'm:' + ymNow() ? 'on' : ''}" onclick="kpiSet('period','m:${ymNow()}')">📅 Cả tháng này</button>
+      ${fullCp ? `<button class="${String(kpiState.period).startsWith('c:') ? 'on' : ''}" onclick="${kpiState.cp === cpForFull ? `kpiSet('period','${fullCp}')` : `kpiSet('cp','${escHtml(cpForFull).replace(/'/g, "\\'")}')`}">🥥 Toàn campaign</button>` : ''}
+    </div>`;
+  const bsSeg = `<div class="k-seg">${seg('bs', 'th', '✅ Đã thực hiện')}${seg('bs', 'duyet', '📋 Đã duyệt (cam kết)')}</div>`;
   let h = `<div class="k-wrap fade-in">
   <div class="k-toolbar">
+    ${bsSeg}
+    ${quick}
     <select class="k-select" onchange="kpiSet('period',this.value)">${kpiPeriodOptions(kpiState.period)}</select>
     ${cpSel}
     <div class="k-seg">${seg('ch', 'all', 'Tất cả kênh')}${KPI_CH.map(c => seg('ch', c, c)).join('')}</div>
     <div class="k-seg">${seg('vg', 'all', 'Toàn bộ vùng')}${vgPresent.map(v => seg('vg', v, v === 'Toàn quốc' ? 'Toàn quốc' : 'Miền ' + v)).join('')}</div>
     <div class="k-upd">Dữ liệu lúc ${kpiData.generatedAt || '—'}<button class="k-icon-btn" title="Tải lại" onclick="loadKpiDashboard(true)">↻</button></div>
   </div>
-  <div class="k-period">${P.label}${prev ? ` <span>· ${P.prevLabel}</span>` : ''}</div>`;
+  <div class="k-period">${P.label}${prev ? ` <span>· ${P.prevLabel}</span>` : ''}
+    <span> · ${kpiIsTh() ? '✅ số liệu các buổi <b>đã thực hiện</b>' + (P.to >= ymNow() ? ' (tới hôm nay)' : '') : '📋 chi phí <b>cam kết</b> của mọi buổi đã duyệt trong kỳ (gồm buổi sắp tới)'}</span></div>`;
 
   const camp = (kpiState.cp !== 'all' && kpiState.cp !== '__none') ? getCampaignByName(kpiState.cp) : null;
   const salesCamp = (camp && camp.requiresPgSales) || (kpiState.cp !== 'all' && kpiState.cp !== '__none' && cur.some(p => p.md));
   if (salesCamp) {
     // v2.13: chế độ campaign gọn — chỉ các khối riêng của chương trình + chi phí + việc cần xử lý
     h += kpiCampaignSection(P, cur, camp || { name: kpiState.cp });
-    h += `<div class="k-grid2">
-      ${kpiBox('💰 Chi phí chi tiết', 'Chi phí cam kết = kế hoạch đã duyệt + hoàn thành.', kpiCostTable(cur))}
-      ${kpiBox('⚠️ Việc cần xử lý', 'Theo bộ lọc đang chọn, không phụ thuộc kỳ.', kpiAlerts(cur))}
-    </div></div>`;
+    h += kpiBox('💰 Chi phí chi tiết', kpiCostSub(), kpiCostTable(P));
+    h += kpiBox('⚠️ Việc cần xử lý', 'Theo bộ lọc đang chọn, không phụ thuộc kỳ.', kpiAlerts(cur)) + '</div>';
     el.innerHTML = h;
     return;
   } else if (kpiState.cp === 'all') {
@@ -5735,10 +5813,10 @@ function renderKpi() {
     sc.forEach(c => { h += `<div class="c-scope">🥥 <span>Đang có dữ liệu <b>${escHtml(c.name)}</b>.</span>
       <button class="btn btn-sm" style="background:var(--purple);color:#fff;margin-left:auto;" onclick="kpiSet('cp','${escHtml(c.name).replace(/'/g, "\\'")}')">📈 Mở khu theo dõi campaign</button></div>`; });
   }
-  h += kpiCardsHtml(A, B);
-  h += kpiBox('📍 So sánh theo kênh · vùng', 'Kế hoạch & hoàn thành tính theo <b>buổi</b> (1 ngày = 1 buổi). Người = người thử booth + người tiếp cận xe đẩy.', kpiSegmentTable(cur));
+  h += kpiCardsHtml(A, B, DA, DB);
+  h += kpiBox('📍 So sánh theo kênh · vùng', 'Kế hoạch & hoàn thành tính theo <b>buổi</b> (1 ngày = 1 buổi). Người = người thử booth + người tiếp cận xe đẩy. Chi phí theo cơ sở đang chọn (' + (kpiIsTh() ? 'đã thực hiện' : 'cam kết') + ').', kpiSegmentTable(cur, P));
   h += kpiBox('📅 Buổi sampling theo tháng', 'Ma trận tháng × kênh · vùng — ô càng đậm, giá trị càng cao.', kpiMatrix(P));
-  h += kpiBox('💰 Chi phí chi tiết', 'Chi phí cam kết = kế hoạch đã duyệt + hoàn thành. Mẫu thử = SL thực dùng (hoặc SL duyệt) × giá MT/GT.', kpiCostTable(cur));
+  h += kpiBox('💰 Chi phí chi tiết', kpiCostSub() + ' Mẫu thử = SL thực dùng (hoặc SL duyệt) × giá MT/GT.', kpiCostTable(P));
   h += `<div class="k-grid2">
     ${kpiBox('🏆 Điểm bán tốt nhất / cần xem lại', 'Chỉ tính điểm có buổi đã hoàn thành & có báo cáo.', kpiTopBottom(cur))}
     ${kpiBox('⚠️ Việc cần xử lý', 'Theo bộ lọc đang chọn, không phụ thuộc kỳ.', kpiAlerts(cur))}
@@ -5747,7 +5825,7 @@ function renderKpi() {
     ${kpiBox('📦 SKU sampling', 'SL mẫu dùng trong kỳ (đã duyệt + hoàn thành).', kpiSkuTable(cur))}
     ${kpiBox('👥 Nhân sự thực hiện', 'Phân công theo kế hoạch · số liệu theo báo cáo của chính người đó.', kpiStaffTable(cur))}
   </div>
-  <div class="k-foot">tr = triệu đồng · k = nghìn đồng · CP/người = chi phí các kế hoạch đã có báo cáo ÷ (người thử booth + hộ mở cửa nghe) · DS/CP = doanh số (booth + bán hàng) ÷ chi phí các kế hoạch đã có báo cáo · Vùng lấy theo người tạo kế hoạch.</div>
+  <div class="k-foot">tr = triệu đồng · k = nghìn đồng · ${kpiIsTh() ? 'CP/người = chi phí các buổi đã thực hiện ÷ (người thử booth + hộ mở cửa nghe) · DS/CP = doanh số (booth + bán hàng) ÷ chi phí các buổi đã thực hiện' : 'CP/người = chi phí các kế hoạch đã có báo cáo ÷ (người thử booth + hộ mở cửa nghe) · DS/CP = doanh số ÷ chi phí các kế hoạch đã có báo cáo'} · Vùng lấy theo người tạo kế hoạch.</div>
   </div>`;
   el.innerHTML = h;
 }
@@ -5828,7 +5906,7 @@ function kpiCompareSection(list, live, planMap, K, AVG, camp) {
     live.filter(p => KPI_ACTIVE.includes(p.st)).forEach(p => (p.ex || []).forEach(c => { assigned[c] = (assigned[c] || 0) + p.nd; }));
     Object.keys(assigned).forEach(c => { const g = groups[c] || (groups[c] = { sh: [], tas: 0, tasDays: {} }); g.assigned = assigned[c]; });
   } else {
-    live.filter(p => p.tas > 0).forEach(p => { const k = tab === 'vg' ? vgName(p.vg) : p.loc + '||' + p.vg; const g = groups[k] || (groups[k] = { sh: [], tas: 0, tasDays: {} }); g.tas += p.tas; for (let i = 0; i < p.nd; i++) g.tasDays[p.id + '|' + i] = 1; });
+    live.filter(p => p.tas > 0).forEach(p => { const k = tab === 'vg' ? vgName(p.vg) : p.loc + '||' + p.vg; const g = groups[k] || (groups[k] = { sh: [], tas: 0, tasDays: {} }); g.tas += p.tas; const xd = Object.keys(kpiExecIndex().ex[p.id] || {}); (xd.length ? xd : ['0']).forEach(d => { g.tasDays[p.id + '|' + d] = 1; }); });
   }
   const rows = Object.entries(groups).map(([k, g]) => {
     const a = cShiftAgg(g.sh), bd = Object.keys(g.tasDays).length;
@@ -5879,7 +5957,7 @@ function kpiCompareSection(list, live, planMap, K, AVG, camp) {
   };
   // dòng trung bình toàn chương trình (cùng bộ lọc)
   const avgA = Object.assign({}, AVG);
-  const allTas = live.filter(p => p.tas > 0); const allTd = allTas.reduce((t, p) => t + p.nd, 0);
+  const allTas = live.filter(p => p.tas > 0); const allTd = allTas.reduce((t, p) => t + Math.max(kpiExecDaysN(p), 1), 0);   // v2.16: chia cho số buổi đã thực hiện
   avgA.taste = allTd ? allTas.reduce((t, p) => t + p.tas, 0) / allTd : null; avgA.rvDay = AVG.nDays ? AVG.rv / AVG.nDays : null;
   const tabs = [['vg', '🗺️ Khu vực'], ['loc', '🏪 Chợ'], ['rp', '👤 Nhân sự']].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" onclick="kpiSet('cmp','${k}')">${l}</button>`).join('');
   const sortBtns = Object.entries(sorts).map(([k, v]) => `<button class="${sortK === k ? 'on' : ''}" onclick="kpiSet('cms','${k}')">${v[0]}</button>`).join('');
@@ -5909,7 +5987,7 @@ function kpiCampaignSection(P, plansCur, camp) {
   const A = cShiftAgg(list);
   const live = plansCur.filter(p => !KPI_VOID.includes(p.st));
   const booth = live.filter(p => p.tas > 0);
-  const tasDays = booth.reduce((t, p) => t + p.nd, 0), tasSum = booth.reduce((t, p) => t + p.tas, 0);
+  const tasDays = booth.reduce((t, p) => t + Math.max(kpiExecDaysN(p), 1), 0), tasSum = booth.reduce((t, p) => t + p.tas, 0);
   const taste = tasDays ? tasSum / tasDays : null;
 
   // ── 1. Scorecard 4 KPI ──
@@ -5918,9 +5996,9 @@ function kpiCampaignSection(P, plansCur, camp) {
     return `<div class="c-kpi ${st}"><div class="v">${v == null ? '—' : txt}</div><div class="l">${l}</div><div class="t">${en}</div>
       <div class="t">KPI: ${fmt(mn)}–${fmt(mx)}</div><span class="b">${badge[st]}</span></div>`; };
   const pc = x => Math.round(x * 100) + '%', nn = x => fN(x);
-  let h = `<div class="c-scope">🥥 <span>Theo dõi <b>${escHtml(camp.name)}</b> · ${P.label}${kpiState.vg !== 'all' ? ' · Miền ' + kpiState.vg : ''}</span>
+  let h = `<div class="c-scope">🥥 <span>Theo dõi <b>${escHtml(camp.name)}</b> · ${P.label}${kpiState.vg !== 'all' ? ' · Miền ' + kpiState.vg : ''}<br><small>Các chỉ số bán hàng (KPI, phễu, so sánh) luôn tính trên các ca <b>đã thực hiện</b>. Nút "Đã thực hiện / Đã duyệt" đổi cách tính bảng Chi phí.</small></span>
     <span style="margin-left:auto;">${fN(A.n)} ca đã báo cáo · ${fN(A.nDays)} ngày bán</span></div>`;
-  h += kpiBox('🎯 KPI campaign', 'Gõ cửa/xe/ca = hộ đã gõ cửa ÷ số xe-ca · Mở cửa = hộ mở cửa nghe ÷ hộ gõ cửa · Chuyển đổi = người mua ÷ hộ mở cửa nghe · Thử booth = lượt thử ÷ số buổi có booth.',
+  h += kpiBox('🎯 KPI campaign', 'Gõ cửa/xe/ca = tổng hộ gõ cửa của các ca đã báo cáo ÷ tổng xe-ca · Mở cửa = hộ mở cửa nghe ÷ hộ gõ cửa · Chuyển đổi = người mua ÷ hộ mở cửa nghe · Thử booth = lượt thử ÷ số buổi booth đã thực hiện.',
     `<div class="c-score">
       ${card(A.reach, A.reach == null ? '' : fN(A.reach), 'hộ tiếp cận / xe / ca', 'households / cart / shift', K.reachMin, K.reachMax, nn)}
       ${card(A.open, A.open == null ? '' : pc(A.open), 'tỷ lệ mở cửa nghe', 'door-open rate', K.openMin, K.openMax, pc)}
@@ -6049,16 +6127,20 @@ function kpiDelta(cur, prev, invert) {
   return `<span class="k-delta ${good ? 'up' : 'down'}">${up ? '▲' : '▼'} ${Math.abs(pct * 100).toFixed(0)}%</span>`;
 }
 
-function kpiCardsHtml(A, B) {
+function kpiCardsHtml(A, B, DA, DB) {
   const card = (cls, label, val, sub, d) => `<div class="k-card ${cls}"><div class="k-card-l">${label}</div><div class="k-card-v">${val}</div><div class="k-card-s">${sub}${d}</div></div>`;
-  const pgShare = A.tc ? Math.round((A.pg + A.ps) / A.tc * 100) : 0, scShare = A.tc ? Math.round(A.sc / A.tc * 100) : 0;
+  // v2.16: chi phí theo cơ sở đang chọn (đã thực hiện / cam kết), tính theo ngày
+  const th = kpiIsTh(), V = th ? DA.x : DA.c, VB = DB ? (th ? DB.x : DB.c) : null;
+  const pgShare = V.tc ? Math.round((V.pg + V.ps) / V.tc * 100) : 0, scShare = V.tc ? Math.round(V.sc / V.tc * 100) : 0;
+  const cpp = th ? (A.contacts ? V.tc / A.contacts : null) : A.cpp, cppB = B ? (th ? (B.contacts && VB ? VB.tc / B.contacts : null) : B.cpp) : null;
+  const roi = th ? (V.tc ? A.sal / V.tc : null) : A.roi, roiB = B ? (th ? (VB && VB.tc ? B.sal / VB.tc : null) : B.roi) : null;
   return `<div class="k-cards">
     ${card('c-red',   'Buổi hoàn thành', fN(A.ht), `/ ${fN(A.kh)} KH · <b class="${rateCls(A.rate)}">${fP(A.rate)}</b> `, kpiDelta(A.ht, B && B.ht))}
     ${card('c-green', 'Người thử + nghe GT', fN(A.contacts), `${fN(A.tas)} thử booth · ${fN(A.rc)} hộ mở cửa `, kpiDelta(A.contacts, B && B.contacts))}
     ${card('c-teal',  'Doanh số', fM(A.sal), `${A.pk ? fN(A.pk) + ' bịch · ' : ''}${fN(A.htPlans)} KH HT `, kpiDelta(A.sal, B && B.sal))}
-    ${card('c-navy',  'Chi phí cam kết', fM(A.tc), `PG ${pgShare}% · Mẫu ${scShare}% `, kpiDelta(A.tc, B && B.tc, true))}
-    ${card('c-yellow','CP / người', A.cpp == null ? '—' : fN(A.cpp) + 'đ', 'KH đã có báo cáo ', kpiDelta(A.cpp, B && B.cpp, true))}
-    ${card('c-purple','DS / Chi phí', fX(A.roi), `${A.huy} kế hoạch hủy `, kpiDelta(A.roi, B && B.roi))}
+    ${card('c-navy',  th ? 'Chi phí đã thực hiện' : 'Chi phí cam kết', fM(V.tc), th ? `${fN(DA.dTh)} buổi · cam kết ${fM(DA.c.tc)} ` : `${fN(DA.dDuyet)} buổi duyệt · PG ${pgShare}% · Mẫu ${scShare}% `, kpiDelta(V.tc, VB && VB.tc, true))}
+    ${card('c-yellow','CP / người', cpp == null ? '—' : fN(cpp) + 'đ', th ? 'buổi đã thực hiện ' : 'KH đã có báo cáo ', kpiDelta(cpp, cppB, true))}
+    ${card('c-purple','DS / Chi phí', fX(roi), `${A.huy} kế hoạch hủy `, kpiDelta(roi, roiB))}
   </div>`;
 }
 
@@ -6088,12 +6170,16 @@ function kpiSalesTable(list) {
   </tr></thead><tbody>${kpiSegmentRows(rel, line)}</tbody></table></div>`;
 }
 
-function kpiSegmentTable(list) {
+function kpiSegmentTable(list, P) {
   if (!list.length) return '<div class="k-empty">Không có kế hoạch trong kỳ này</div>';
   const segs = kpiSegments(list);
   const rows = segs.map(s => kpiAgg(list.filter(p => p.ch === s.ch && p.vg === s.vg)));
   const maxSal = Math.max(...rows.map(a => a.sal), 1), maxTas = Math.max(...rows.map(a => a.contacts), 1);
-  const line = (label, a, cls) => `<tr class="${cls || ''}">
+  const CR = kpiCostRange(P), DD = kpiCostDays(CR.from, CR.to), th = kpiIsTh();
+  const line = (label, a0, cls, sg) => {
+    const ca = kpiCostAgg(DD.filter(e => (!sg || !sg.ch || e.ch === sg.ch) && (!sg || !sg.vg || e.vg === sg.vg)));
+    const a = Object.assign({}, a0, th ? { tc: ca.x.tc, cpp: a0.contacts ? ca.x.tc / a0.contacts : null, roi: ca.x.tc ? a0.sal / ca.x.tc : null } : { tc: ca.c.tc });
+    return `<tr class="${cls || ''}">
       <td class="k-l">${label}</td>
       <td>${fN(a.kh)}</td><td><b>${fN(a.ht)}</b></td>
       <td><span class="k-pill ${rateCls(a.rate)}">${fP(a.rate)}</span></td>
@@ -6103,7 +6189,7 @@ function kpiSegmentTable(list) {
       <td>${fM(a.tc)}</td>
       <td>${a.cpp == null ? '—' : fN(a.cpp)}</td>
       <td>${fX(a.roi)}</td>
-    </tr>`;
+    </tr>`; };
   return `<div class="k-tbl-wrap"><table class="k-tbl">
     <thead><tr><th class="k-l">Kênh · Vùng</th><th>Buổi KH</th><th>Buổi HT</th><th>% HT</th><th>Người</th><th>TB/buổi</th><th>Doanh số</th><th>Chi phí</th><th>CP/người</th><th>DS/CP</th></tr></thead>
     <tbody>${kpiSegmentRows(list, line)}</tbody></table></div>`;
@@ -6120,6 +6206,10 @@ function kpiMatrix(P) {
   const val = a => kpiState.mx === 'ht' ? a.ht : kpiState.mx === 'tas' ? a.contacts : kpiState.mx === 'sal' ? a.sal : a.tc;
   const show = a => kpiState.mx === 'ht' ? `<b>${fN(a.ht)}</b><small>/${fN(a.kh)}</small>` : kpiState.mx === 'tas' ? fN(a.contacts) : fM(val(a));
   const grid = months.map(m => segs.map(s => kpiAgg(list.filter(p => p.m === m && p.ch === s.ch && p.vg === s.vg))));
+  // v2.16: chi phí theo NGÀY & cơ sở đang chọn (không dồn kế hoạch nhiều ngày vào tháng bắt đầu)
+  const MD = kpiState.mx === 'tc' ? kpiCostDays(months[0], months[months.length - 1]) : null;
+  const tcOf = (m, ch, vg) => { const ca = kpiCostAgg(MD.filter(e => (!m || e.m === m) && (!ch || e.ch === ch) && (!vg || e.vg === vg))); return kpiIsTh() ? ca.x.tc : ca.c.tc; };
+  if (MD) grid.forEach((r, i) => r.forEach((a, j) => { a.tc = tcOf(months[i], segs[j].ch, segs[j].vg); }));
   let max = 0; grid.forEach(r => r.forEach(a => { max = Math.max(max, val(a)); }));
   const heat = v => max ? `background:rgba(${kpiState.mx === 'tc' ? '27,58,87' : '14,117,68'},${(0.06 + 0.5 * v / max).toFixed(2)})` : '';
   const tabs = Object.entries(metrics).map(([k, l]) => `<button class="${kpiState.mx === k ? 'on' : ''}" onclick="kpiSet('mx','${k}')">${l}</button>`).join('');
@@ -6127,33 +6217,43 @@ function kpiMatrix(P) {
   h += segs.map(s => `<th>${s.ch}<br><small>${s.vg}</small></th>`).join('') + '<th>Tổng</th></tr></thead><tbody>';
   months.slice().reverse().forEach(m => {
     const i = months.indexOf(m);
-    const tot = kpiAgg(list.filter(p => p.m === m));
+    const tot = kpiAgg(list.filter(p => p.m === m)); if (MD) tot.tc = tcOf(m);
     h += `<tr><td class="k-l">${ymShort(m)}</td>` + grid[i].map(a => `<td style="${heat(val(a))}">${(a.kh || val(a)) ? show(a) : '<span class="k-dim">·</span>'}</td>`).join('') + `<td class="k-totc">${show(tot)}</td></tr>`;
   });
   const colTot = segs.map(s => kpiAgg(list.filter(p => p.ch === s.ch && p.vg === s.vg)));
-  h += `<tr class="k-total"><td class="k-l">Tổng</td>${colTot.map(a => `<td>${show(a)}</td>`).join('')}<td>${show(kpiAgg(list))}</td></tr>`;
+  if (MD) colTot.forEach((a, j) => { a.tc = tcOf(null, segs[j].ch, segs[j].vg); });
+  const grand = kpiAgg(list); if (MD) grand.tc = tcOf();
+  h += `<tr class="k-total"><td class="k-l">Tổng</td>${colTot.map(a => `<td>${show(a)}</td>`).join('')}<td>${show(grand)}</td></tr>`;
   return h + '</tbody></table></div>';
 }
 
-function kpiCostTable(list) {
-  const act = list.filter(p => KPI_ACTIVE.includes(p.st));
-  if (!act.length) return '<div class="k-empty">Chưa có chi phí cam kết trong kỳ</div>';
-  const hasPs = act.some(p => (p.ps || 0) > 0);
+function kpiCostSub() {
+  return kpiIsTh()
+    ? 'Chi phí các buổi <b>đã thực hiện</b>: PG bán hàng = chi phí thực tế từng ca (theo số PG báo cáo); PG sampling, địa điểm, mẫu, quà = chia đều theo ngày của kế hoạch. CP/buổi TH = chi phí đã thực hiện ÷ buổi đã thực hiện. CP/buổi duyệt = chi phí cam kết ÷ mọi buổi đã duyệt (đã + chưa thực hiện).'
+    : 'Chi phí <b>cam kết</b> của mọi buổi đã duyệt trong kỳ (đã + chưa thực hiện), chia đều theo ngày và tính vào đúng tháng của từng ngày.';
+}
+/** v2.16: chi phí chi tiết theo NGÀY — cột chi phí theo cơ sở đang chọn, luôn kèm CP/buổi đã thực hiện & CP/buổi đã duyệt. */
+function kpiCostTable(P) {
+  const CR = kpiCostRange(P), days = kpiCostDays(CR.from, CR.to), th = kpiIsTh();
+  if (!days.length) return '<div class="k-empty">Chưa có kế hoạch đã duyệt trong kỳ</div>';
+  const hasPs = days.some(e => (e.c && e.c.ps > 0) || (e.x && e.x.ps > 0));
   const legend = `<div class="k-legend"><span><i class="s-pg"></i>PG sampling</span>${hasPs ? '<span><i class="s-ps"></i>PG bán hàng</span>' : ''}<span><i class="s-lc"></i>Địa điểm</span><span><i class="s-sc"></i>Mẫu thử</span><span><i class="s-gf"></i>Quà tặng</span></div>`;
-  const stack = a => a.tc ? `<div class="k-stack">${[['pg', a.pg], ['ps', a.ps], ['lc', a.lc], ['sc', a.sc], ['gf', a.gf]].map(([k, v]) => v > 0 ? `<i class="s-${k}" style="width:${(v / a.tc * 100).toFixed(1)}%" title="${Math.round(v / a.tc * 100)}%"></i>` : '').join('')}</div>` : '';
-  const line = (label, a, cls) => `<tr class="${cls || ''}">
+  const stack = v => v.tc ? `<div class="k-stack">${[['pg', v.pg], ['ps', v.ps], ['lc', v.lc], ['sc', v.sc], ['gf', v.gf]].map(([k, x]) => x > 0 ? `<i class="s-${k}" style="width:${(x / v.tc * 100).toFixed(1)}%" title="${Math.round(x / v.tc * 100)}%"></i>` : '').join('')}</div>` : '';
+  const line = (label, a, cls) => { const v = th ? a.x : a.c; return `<tr class="${cls || ''}">
     <td class="k-l">${label}</td>
-    <td>${fN(a.actDays)}</td>
-    <td>${fM(a.pg)}<small class="k-sub-t">${fN(a.pgd)} PG-ngày · ${fN(a.pgh)}h</small></td>
-    ${hasPs ? `<td>${fM(a.ps)}<small class="k-sub-t">${fN(a.psd)} PG-ca</small></td>` : ''}
-    <td>${fM(a.lc)}</td>
-    <td>${fM(a.sc)}<small class="k-sub-t">${fN(a.sq)} mẫu</small></td>
-    <td>${fM(a.gf)}</td>
-    <td><b>${fM(a.tc)}</b></td>
-    <td>${fM(a.cpb)}</td>
-    <td class="k-stack-c">${stack(a)}</td>
-  </tr>`;
-  return legend + `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr><th class="k-l">Kênh · Vùng</th><th>Buổi</th><th>PG sampling</th>${hasPs ? '<th>PG bán hàng</th>' : ''}<th>Địa điểm</th><th>Mẫu thử</th><th>Quà</th><th>Tổng</th><th>CP/buổi</th><th>Cơ cấu</th></tr></thead><tbody>${kpiSegmentRows(act, line)}</tbody></table></div>`;
+    <td><b>${fN(a.dTh)}</b><small>/ ${fN(a.dDuyet)} duyệt</small></td>
+    <td>${fM(v.pg)}<small class="k-sub-t">${fN(v.pgd)} PG-ngày</small></td>
+    ${hasPs ? `<td>${fM(v.ps)}<small class="k-sub-t">${fN(v.psd)} PG-ca</small></td>` : ''}
+    <td>${fM(v.lc)}</td>
+    <td>${fM(v.sc)}<small class="k-sub-t">${fN(v.sq)} mẫu</small></td>
+    <td>${fM(v.gf)}</td>
+    <td><b>${fM(v.tc)}</b></td>
+    <td>${a.cpbTh == null ? '<span class="k-dim">—</span>' : '<b>' + fM(a.cpbTh) + '</b>'}</td>
+    <td>${a.cpbDuyet == null ? '<span class="k-dim">—</span>' : fM(a.cpbDuyet)}</td>
+    <td>${a.restN ? fM(a.rest.tc) + '<small>' + fN(a.restN) + ' buổi</small>' : '<span class="k-dim">·</span>'}</td>
+    <td class="k-stack-c">${stack(v)}</td>
+  </tr>`; };
+  return legend + `<div class="k-tbl-wrap"><table class="k-tbl"><thead><tr><th class="k-l">Kênh · Vùng</th><th>Buổi<br><small>đã TH / duyệt</small></th><th>PG sampling</th>${hasPs ? '<th>PG bán hàng</th>' : ''}<th>Địa điểm</th><th>Mẫu thử</th><th>Quà</th><th>Tổng<br><small>${th ? 'đã TH' : 'cam kết'}</small></th><th>CP/buổi<br><small>đã TH</small></th><th>CP/buổi<br><small>đã duyệt</small></th><th>Chưa TH<br><small>cam kết còn lại</small></th><th>Cơ cấu</th></tr></thead><tbody>${kpiSegmentRows(days, line, kpiCostAgg)}</tbody></table></div>`;
 }
 
 function kpiTopBottom(list) {
